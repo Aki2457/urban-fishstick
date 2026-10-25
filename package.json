@@ -17,5 +17,9 @@
   "devDependencies": {
     "@types/node": "22.20.5",
     "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "@simplewebauthn/browser": "13.3.0",
+    "@simplewebauthn/server": "13.3.3"
   }
 }

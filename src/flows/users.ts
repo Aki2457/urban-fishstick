@@ -1,6 +1,6 @@
 import { randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
-import type { UserDirectory, UserRecord } from "./login.js";
+import type { StoredPasskey, UserDirectory, UserRecord } from "./login.js";
 
 const scrypt = promisify(scryptCb) as (password: string, salt: Buffer, keylen: number) => Promise<Buffer>;
 const KEY_LENGTH = 64;
@@ -64,5 +64,16 @@ export class InMemoryUserDirectory implements UserDirectory {
 
   async recordSuccess(userId: string): Promise<void> {
     this.failures.delete(userId);
+  }
+
+  async addPasskey(userId: string, passkey: StoredPasskey): Promise<void> {
+    const user = this.byId.get(userId);
+    if (!user) throw new Error(`Unknown user "${userId}"`);
+    user.passkeys = [...(user.passkeys ?? []).filter((p) => p.id !== passkey.id), passkey];
+  }
+
+  async updatePasskeyCounter(userId: string, credentialId: string, counter: number): Promise<void> {
+    const passkey = this.byId.get(userId)?.passkeys?.find((p) => p.id === credentialId);
+    if (passkey) passkey.counter = counter;
   }
 }

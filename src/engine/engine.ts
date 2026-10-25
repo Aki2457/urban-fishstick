@@ -54,6 +54,10 @@ export class FlowEngine {
     return this;
   }
 
+  has(flowId: string): boolean {
+    return this.flows.has(flowId);
+  }
+
   /** Starts a new run and returns the first screen (or a terminal, if the flow decides immediately). */
   async start(flowId: string): Promise<FlowStep> {
     const flow = this.flows.get(flowId);

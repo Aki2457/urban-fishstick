@@ -13,7 +13,7 @@
 /** Server-side state shared by every node in one run of a flow. Never sent to the client. */
 export type FlowContext = Record<string, unknown>;
 
-export type FieldType = "text" | "email" | "password" | "otp" | "checkbox" | "hidden";
+export type FieldType = "text" | "email" | "password" | "otp" | "checkbox" | "hidden" | "date" | "passkey";
 
 export interface FieldDefinition {
   name: string;

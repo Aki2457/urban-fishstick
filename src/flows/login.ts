@@ -18,6 +18,17 @@ export interface UserRecord {
   email: string;
   passwordHash: string;
   mfaEnabled: boolean;
+  /** Registered passkeys. Used by the Passkey node in builder flows. */
+  passkeys?: StoredPasskey[];
+}
+
+export interface StoredPasskey {
+  /** Credential id, base64url. */
+  id: string;
+  publicKey: Uint8Array;
+  counter: number;
+  transports?: string[];
+  createdAt: number;
 }
 
 export interface UserDirectory {

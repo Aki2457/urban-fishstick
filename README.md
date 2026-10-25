@@ -18,14 +18,50 @@ Outcomes map to the next node through a transition table. A screen can return
 
 ```bash
 npm install
-npm test        # 20 tests
-npm run demo    # http://localhost:3000
+npm test        # 34 tests
+npm run demo    # whiteboard at http://localhost:3000, hand-written login at /login
 ```
 
 Demo accounts:
 
-- `ada@example.com` / `correct horse`: password only
-- `grace@example.com` / `battery staple`: password, then a 6-digit code printed to the server console
+- `ada@example.com` / `correct horse`
+- `grace@example.com` / `battery staple` (MFA in the `/login` flow)
+
+Email codes are printed to the server console.
+
+## The whiteboard
+
+`http://localhost:3000/` is a visual builder for flows. Every node maps to real engine nodes, so whatever you build runs.
+
+1. Click **Start with a Starter Node**. It asks the user for their email.
+2. Drag nodes from the **Toolbox** onto the whiteboard, or click a tile to add it to the end. Drag nodes to reorder them, or use the arrow buttons (Alt+Up/Down on the keyboard). Delete removes the selected node.
+3. Click a node to change its settings (minimum age, password attempts, code lifetime).
+4. Press **N** or **Add a note** for a sticky note. Drag it by its header.
+5. Press **Run flow** to try it in a new tab.
+
+Flows save automatically to `data/flows.json`.
+
+| Node | What it does at run time | On failure |
+|------|--------------------------|------------|
+| Starter Node | Asks for the email and looks the user up. Unknown emails continue, so it reveals nothing. | |
+| Enter Password | Checks the password with scrypt. Locks the account after 5 failures across all flows. | Denied after the set number of tries |
+| Verification Email | Emails a 6-digit code (expires, 5 attempts, up to 3 resends). | Denied after 5 wrong codes |
+| Age Check | Asks for a date of birth and checks it against the minimum age. | Denied if under age |
+| Passkey | Signs in with a passkey (WebAuthn). If the user has none and an earlier step proved who they are, it creates one instead. | Denied after 5 failed attempts. Users with no passkey and no earlier proof are stopped. |
+| Authenticate | Ends the flow signed in. Re-checks at run time that a factor really passed. | Denied |
+| Log Out / Deny | Ends the flow signed out. | |
+
+The whiteboard checks the flow as you edit. Errors block **Run flow**, warnings do not:
+
+- **Error:** no Starter Node, the flow doesn't end in Authenticate or Log Out / Deny, or a node sits after one of them.
+- **Error:** Authenticate with no Enter Password, Verification Email or Passkey before it. Without one, anyone who types an email gets in.
+- **Warning:** Passkey with no Enter Password or Verification Email before it. Users who have no passkey yet can't get through.
+
+The seeded flows show this. **Sign in with a passkey** (Age Check, Passkey, Authenticate) only works for users who already have a passkey, so run **Password, then add a passkey** once first.
+
+Passkeys need `localhost` or HTTPS. For another host, set `ORIGIN` (e.g. `https://auth.example.com`) and optionally `RP_ID`.
+
+Each saved version of a flow compiles to its own engine flow, so editing a flow never breaks a run that is already in progress.
 
 ## The included login flow
 
@@ -91,6 +127,9 @@ unknown nodes, dead ends, and unreachable nodes all fail immediately.
 
 ## Before production
 
+- The whiteboard API has no login. The server binds to `127.0.0.1` by default and refuses cross-origin writes, but anyone who can reach it can edit flows. Put it behind your admin auth before exposing it.
+- Age Check is self-declared. It stops honest under-age users, not determined ones.
+
 - `MemorySessionStore` and `InMemoryUserDirectory` work for one process only. Implement `SessionStore` and `UserDirectory` against Redis or your database.
 - Add rate limiting per IP and per email at the HTTP layer. The engine does not do this.
 - On `success`, create the real login session from `step.result` (for example an HttpOnly, Secure, SameSite cookie). The demo only logs it.
@@ -102,6 +141,7 @@ unknown nodes, dead ends, and unreachable nodes all fail immediately.
 ```
 src/engine/     engine, types, validation, session store
 src/flows/      login flow and the in-memory user directory
-src/demo/       HTTP server and the browser page
+src/builder/    whiteboard document format, rules, compiler, file store
+src/demo/       HTTP server, whiteboard page and run page
 test/           node:test suites for the engine and the login flow
 ```

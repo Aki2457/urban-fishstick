@@ -6,3 +6,9 @@ export { assertValidFlow, cleanAndValidateInput, FlowDefinitionError } from "./e
 export { createLoginFlow } from "./flows/login.js";
 export type { LoginFlowDeps, UserRecord, UserDirectory, CodeSender } from "./flows/login.js";
 export { InMemoryUserDirectory, hashPassword, verifyPassword } from "./flows/users.js";
+export { compileDoc, ageOn } from "./builder/compile.js";
+export type { BuilderDeps, BuilderUserDirectory, CompileResult } from "./builder/compile.js";
+export { checkDoc, sanitizeDoc, newDoc, BuilderInputError } from "./builder/document.js";
+export { FlowDocStore } from "./builder/store.js";
+export * from "./builder/types.js";
+export type { StoredPasskey } from "./flows/login.js";

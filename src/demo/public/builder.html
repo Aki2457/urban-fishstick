@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flow Whiteboard</title>
+  <style>
+    :root {
+      --chrome: #c9d1da;        /* header bar and toolbox */
+      --board: #ffffff;
+      --node: #6b7076;          /* node and tile fill */
+      --node-hover: #5d6268;
+      --node-text: #e4e7eb;
+      --starter: #c9d1da;
+      --text: #111316;
+      --muted: #4b525a;
+      --arrow: #a9b3be;
+      --accent: #2557d6;
+      --error: #c0362c;
+      --warning: #a86200;
+      --error-bg: #fdecea;
+      --warning-bg: #fff4e0;
+      --note: #fff3b8;
+      --note-text: #2b2a20;
+      --note-edge: #e6d685;
+      --panel: #eef1f4;
+      --focus: #2557d6;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --chrome: #262b31; --board: #15181c; --node: #3b4148; --node-hover: #464d55; --node-text: #e4e7eb;
+        --starter: #2c3238; --text: #eef0f2; --muted: #a3acb6; --arrow: #59626c; --accent: #7aa0ff;
+        --error: #ff8a80; --warning: #ffc266; --error-bg: #3a1c1a; --warning-bg: #362a14;
+        --note: #4a4426; --note-text: #f5efcf; --note-edge: #6b6236; --panel: #22272d; --focus: #7aa0ff;
+      }
+    }
+    :root[data-theme="dark"] {
+      --chrome: #262b31; --board: #15181c; --node: #3b4148; --node-hover: #464d55; --node-text: #e4e7eb;
+      --starter: #2c3238; --text: #eef0f2; --muted: #a3acb6; --arrow: #59626c; --accent: #7aa0ff;
+      --error: #ff8a80; --warning: #ffc266; --error-bg: #3a1c1a; --warning-bg: #362a14;
+      --note: #4a4426; --note-text: #f5efcf; --note-edge: #6b6236; --panel: #22272d; --focus: #7aa0ff;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { margin: 0; background: var(--board); color: var(--text);
+           font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    button, input, select, textarea { font: inherit; color: inherit; }
+    :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+    .app { display: grid; height: 100vh; grid-template-columns: minmax(0, 1fr) 360px;
+           grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "head tools" "board tools"; }
+
+    /* Header */
+    .head { grid-area: head; background: var(--chrome); padding: 16px 20px; display: flex; flex-wrap: wrap;
+            align-items: center; gap: 12px 20px; }
+    .head h1 { margin: 0; font-size: 2.1rem; font-weight: 800; letter-spacing: -.01em; }
+    .btn { border: 0; border-radius: 10px; padding: 9px 18px; background: var(--node); color: var(--node-text);
+           cursor: pointer; font-size: .95rem; }
+    .btn:hover { background: var(--node-hover); }
+    .btn.primary { background: var(--accent); color: #fff; font-weight: 600; }
+    .btn.primary:disabled { opacity: .45; cursor: not-allowed; }
+    .btn.quiet { background: transparent; color: var(--muted); padding: 9px 10px; }
+    .btn.quiet:hover { color: var(--text); background: transparent; text-decoration: underline; }
+    .flowbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+    .flowbar select, .flowbar input { border: 1px solid transparent; background: var(--board); border-radius: 8px;
+           padding: 7px 10px; max-width: 220px; }
+    .flowbar input { width: 200px; }
+    .save-state { font-size: .85rem; color: var(--muted); min-width: 56px; }
+    .save-state.bad { color: var(--error); }
+
+    /* Toolbox */
+    .tools { grid-area: tools; background: var(--chrome); padding: 18px 0 18px 28px; overflow-y: auto; }
+    .tools h2 { margin: 6px 0 22px; font-size: 2.1rem; font-weight: 800; padding-bottom: 6px;
+                border-bottom: 3px solid var(--text); }
+    .tools p { margin: -10px 20px 16px 0; color: var(--muted); font-size: .85rem; }
+    .tiles { display: grid; gap: 18px; }
+    .tile { display: flex; align-items: center; gap: 18px; width: 100%; min-height: 90px; padding: 0 20px;
+            border: 0; border-radius: 12px 0 0 12px; background: var(--node); color: var(--node-text);
+            font-size: 1.55rem; text-align: left; cursor: grab; user-select: none; }
+    .tile:hover { background: var(--node-hover); }
+    .tile:active { cursor: grabbing; }
+    .tile svg { width: 44px; height: 44px; flex: none; }
+
+    /* Board */
+    .board { grid-area: board; position: relative; overflow: auto; background: var(--board); }
+    .canvas { position: relative; min-height: 100%; padding: 32px 24px 48px; min-width: 100%; }
+    .chain { display: flex; flex-direction: column; align-items: center; max-width: 660px; margin: 0 auto; }
+    .starter { width: 100%; border: 0; border-radius: 30px; background: var(--starter); color: var(--text);
+               padding: 22px 24px; text-align: center; cursor: pointer; position: relative; }
+    .starter .t { display: block; font-size: 1.9rem; }
+    .starter .s { display: block; font-size: 1rem; color: var(--muted); }
+    .starter.set { cursor: default; }
+    .arrow { width: 24px; height: 62px; color: var(--arrow); flex: none; }
+
+    .node-wrap { width: 64%; min-width: 280px; display: flex; flex-direction: column; align-items: stretch; }
+    .node { position: relative; display: flex; align-items: center; gap: 20px; min-height: 90px; padding: 0 22px;
+            border-radius: 10px; background: var(--node); color: var(--node-text); font-size: 1.75rem; cursor: grab;
+            border: 3px solid transparent; user-select: none; }
+    .node:hover { background: var(--node-hover); }
+    .node.selected { border-color: var(--accent); }
+    .node.has-error { border-color: var(--error); }
+    .node.has-warning:not(.has-error) { border-color: var(--warning); }
+    .node.dragging { opacity: .4; }
+    .node svg.icon { width: 52px; height: 52px; flex: none; }
+    .node .name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .node .chip { font-size: .85rem; background: rgba(255,255,255,.14); padding: 2px 10px; border-radius: 999px; white-space: nowrap; }
+    /* Controls float over the right edge so they take no space until shown. */
+    .node .ctrl { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); display: flex; gap: 2px;
+                  opacity: 0; pointer-events: none; transition: opacity .12s; }
+    .node:hover .ctrl, .node:focus-within .ctrl, .node:focus .ctrl, .node.selected .ctrl { opacity: 1; pointer-events: auto; }
+    .node:hover .chip, .node:focus .chip, .node:focus-within .chip, .node.selected .chip { visibility: hidden; }
+    .ctrl button { width: 34px; height: 34px; border: 0; border-radius: 8px; background: rgba(0,0,0,.18); color: var(--node-text);
+                   cursor: pointer; font-size: 1rem; display: grid; place-items: center; }
+    .ctrl button:hover { background: rgba(0,0,0,.32); }
+    .ctrl button:disabled { opacity: .35; cursor: default; }
+    .starter .ctrl { position: absolute; top: 12px; right: 12px; opacity: 1; }
+    .starter .ctrl button { background: rgba(0,0,0,.08); color: var(--text); }
+
+    .config { margin-top: 8px; background: var(--panel); border-radius: 10px; padding: 12px 16px; font-size: .95rem; }
+    .config label { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .config input { width: 90px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--arrow); background: var(--board); }
+    .config .hint { color: var(--muted); font-size: .85rem; margin: 0; }
+
+    .drop { width: 64%; min-width: 280px; min-height: 90px; border: 2px dashed var(--arrow); border-radius: 10px;
+            display: grid; place-items: center; color: var(--muted); text-align: center; padding: 12px; font-size: .95rem; }
+    .drop.over, .chain.over-end .drop { border-color: var(--accent); color: var(--accent); }
+    /* Drop position marker. Absolutely positioned so showing it never shifts the layout under the cursor. */
+    .indicator { position: absolute; height: 4px; border-radius: 2px; background: var(--accent); pointer-events: none; z-index: 4; }
+
+    /* Notes */
+    .note { position: absolute; width: 220px; background: var(--note); color: var(--note-text); border: 1px solid var(--note-edge);
+            border-radius: 6px; box-shadow: 0 6px 16px rgba(0,0,0,.12); z-index: 5; }
+    .note .grip { display: flex; justify-content: space-between; align-items: center; padding: 4px 6px 0 10px;
+                  cursor: move; font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; opacity: .7; touch-action: none; }
+    .note .grip button { border: 0; background: transparent; cursor: pointer; font-size: 1rem; color: inherit; padding: 2px 6px; }
+    .note textarea { display: block; width: 100%; min-height: 90px; border: 0; background: transparent; resize: vertical;
+                     padding: 4px 10px 10px; color: inherit; font-size: .95rem; }
+    .note textarea:focus-visible { outline: none; }
+    .note:focus-within { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+    /* Problems */
+    .problems { max-width: 660px; margin: 28px auto 0; display: grid; gap: 8px; }
+    .problem { padding: 10px 14px; border-radius: 8px; font-size: .92rem; display: flex; gap: 10px; }
+    .problem.error { background: var(--error-bg); color: var(--error); }
+    .problem.warning { background: var(--warning-bg); color: var(--warning); }
+    .problem b { flex: none; }
+    .problem button { all: unset; cursor: pointer; text-decoration: underline; }
+    .ready { max-width: 660px; margin: 28px auto 0; color: var(--muted); text-align: center; font-size: .92rem; }
+
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+    @media (max-width: 860px) {
+      .app { height: auto; min-height: 100vh; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto;
+             grid-template-areas: "head" "tools" "board"; }
+      .head { padding: 14px 16px; }
+      .head h1, .tools h2 { font-size: 1.6rem; }
+      .flowbar { margin-left: 0; width: 100%; }
+      .flowbar input { flex: 1; width: auto; min-width: 0; }
+      .tools { padding: 12px 16px 16px; }
+      .tools h2 { margin-bottom: 14px; }
+      .tools p { margin-right: 0; }
+      .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .tile { min-height: 60px; border-radius: 10px; font-size: 1rem; gap: 10px; padding: 0 12px; }
+      .tile svg { width: 28px; height: 28px; }
+      .board { overflow: visible; }
+      .canvas { padding: 24px 16px 40px; }
+      .node-wrap, .drop, .indicator { width: 100%; min-width: 0; }
+      .node { font-size: 1.2rem; min-height: 70px; gap: 14px; padding: 0 14px; }
+      .node svg.icon { width: 36px; height: 36px; }
+      .node .ctrl { position: static; transform: none; opacity: 1; pointer-events: auto; }
+      .node .chip { visibility: visible !important; }
+      .flowbar select, .flowbar input { flex: 1 1 100%; max-width: none; }
+      .starter .t { font-size: 1.35rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="head">
+      <h1>Whiteboard</h1>
+      <button class="btn" id="add-note" type="button" aria-keyshortcuts="N">Add a note [N]</button>
+      <div class="flowbar">
+        <label class="sr-only" for="flow-picker">Open flow</label>
+        <select id="flow-picker"></select>
+        <label class="sr-only" for="flow-name">Flow name</label>
+        <input id="flow-name" maxlength="80" autocomplete="off">
+        <button class="btn quiet" id="new-flow" type="button">New</button>
+        <button class="btn quiet" id="delete-flow" type="button">Delete</button>
+        <span class="save-state" id="save-state" role="status" aria-live="polite"></span>
+        <button class="btn primary" id="run" type="button">Run flow ▶</button>
+      </div>
+    </header>
+
+    <aside class="tools" aria-labelledby="tools-title">
+      <h2 id="tools-title">Toolbox</h2>
+      <p>Drag a node onto the whiteboard, or click it to add it to the end.</p>
+      <div class="tiles" id="tiles"></div>
+    </aside>
+
+    <main class="board" id="board" aria-label="Whiteboard">
+      <div class="canvas" id="canvas">
+        <div class="chain" id="chain"></div>
+        <div class="indicator" id="indicator" hidden></div>
+        <div id="problems"></div>
+        <div id="notes"></div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const ICONS = {
+      starter: '<circle cx="12" cy="12" r="9"/><path d="M10 8.5l5 3.5-5 3.5z"/>',
+      authenticate: '<path d="M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5"/><path d="M3 12h12"/><path d="M11 8l4 4-4 4"/>',
+      password: '<path d="M5 7v6M2.4 8.5l5.2 3M2.4 11.5l5.2-3M12 7v6M9.4 8.5l5.2 3M9.4 11.5l5.2-3M19 7v6M16.4 8.5l5.2 3M16.4 11.5l5.2-3"/><path d="M2 18h20"/>',
+      "email-code": '<rect x="2" y="4.5" width="16" height="12" rx="1.5"/><path d="M2.5 5.5l7.5 6 7.5-6"/><path d="M14 20h8M19 17l3 3-3 3"/>',
+      "age-check": '<rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="8" cy="10" r="2.2"/><path d="M4.5 16.5c.6-2 2-3.2 3.5-3.2s2.9 1.2 3.5 3.2"/><path d="M14 9.5h5M14 13.5h5"/>',
+      passkey: '<circle cx="9" cy="7" r="3.5"/><path d="M2.5 20.5c0-3.6 2.9-6.5 6.5-6.5 1.3 0 2.5.4 3.5 1"/><circle cx="17.5" cy="12" r="2.6"/><path d="M17.5 14.6v6.9M17.5 18h2.2M17.5 20.6h1.6"/>',
+      deny: '<path d="M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h5"/><path d="M9 12h12"/><path d="M17 8l4 4-4 4"/>',
+    };
+    const TOOL_ORDER = ["authenticate", "password", "email-code", "age-check", "passkey", "deny"];
+
+    const $ = (id) => document.getElementById(id);
+    let meta = {};            // type -> { label, config: [{key,label,min,max,default}] }
+    let doc = null;           // the flow being edited
+    let problems = [];
+    let selectedId = null;
+    let dragging = null;      // { kind: "new", type } | { kind: "move", id }
+    let dropIndex = null;
+
+    /* ---------- helpers ---------- */
+
+    function icon(name, cls = "icon") {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("viewBox", "0 0 24 24");
+      svg.setAttribute("fill", "none");
+      svg.setAttribute("stroke", "currentColor");
+      svg.setAttribute("stroke-width", "1.7");
+      svg.setAttribute("stroke-linecap", "round");
+      svg.setAttribute("stroke-linejoin", "round");
+      svg.setAttribute("aria-hidden", "true");
+      svg.setAttribute("class", cls);
+      svg.innerHTML = ICONS[name]; // constant markup only
+      return svg;
+    }
+
+    function el(tag, props = {}, ...children) {
+      const node = document.createElement(tag);
+      for (const [k, v] of Object.entries(props)) {
+        if (v === undefined || v === null || v === false) continue;
+        if (k === "class") node.className = v;
+        else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+        else node.setAttribute(k, v === true ? "" : v);
+      }
+      for (const c of children) if (c != null) node.append(c);
+      return node;
+    }
+
+    function arrow() {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("viewBox", "0 0 24 62");
+      svg.setAttribute("class", "arrow");
+      svg.setAttribute("aria-hidden", "true");
+      svg.innerHTML = '<path d="M12 4v52M5 48l7 8 7-8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>';
+      return svg;
+    }
+
+    const newId = () => Math.random().toString(36).slice(2, 12).padEnd(10, "0");
+
+    function defaults(type) {
+      const config = {};
+      for (const spec of meta[type].config) config[spec.key] = spec.default;
+      return config;
+    }
+
+    function chipText(step) {
+      if (step.type === "age-check") return `${step.config.minAge}+`;
+      if (step.type === "password") return `${step.config.maxAttempts} tries`;
+      if (step.type === "email-code") return `${step.config.codeMinutes} min`;
+      return null;
+    }
+
+    async function api(method, url, body) {
+      const res = await fetch(url, {
+        method,
+        headers: body ? { "content-type": "application/json" } : {},
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      return data;
+    }
+
+    /* ---------- saving ---------- */
+
+    let saveTimer = null, saveSeq = 0, saving = null;
+    function setSaveState(text, bad = false) {
+      const s = $("save-state");
+      s.textContent = text;
+      s.classList.toggle("bad", bad);
+    }
+    function changed({ rerender = true } = {}) {
+      if (rerender) render();
+      setSaveState("Editing…");
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => save().catch(() => {}), 400);
+    }
+    async function save() {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+      const seq = ++saveSeq;
+      setSaveState("Saving…");
+      const body = { name: doc.name, starter: doc.starter, steps: doc.steps, notes: doc.notes };
+      const run = api("PUT", `/api/builder/flows/${doc.id}`, body).then((data) => {
+        if (seq !== saveSeq) return; // a newer save is in flight; its answer wins
+        doc.updatedAt = data.doc.updatedAt;
+        problems = data.problems;
+        setSaveState("Saved");
+        renderProblems();
+        decorateNodes();
+        refreshPicker();
+      }, (err) => {
+        if (seq === saveSeq) setSaveState(err.message.includes("fetch") ? "Offline" : "Save failed", true);
+        throw err;
+      });
+      saving = run.catch(() => {});
+      return run;
+    }
+    async function flushSave() {
+      if (saveTimer) await save();
+      else await saving;
+    }
+
+    /* ---------- editing ---------- */
+
+    function addStep(type, index = doc.steps.length) {
+      const step = { id: newId(), type, config: defaults(type) };
+      doc.steps.splice(index, 0, step);
+      selectedId = meta[type].config.length ? step.id : null;
+      changed();
+      focusNode(step.id);
+    }
+    function moveStep(id, toIndex) {
+      const from = doc.steps.findIndex((s) => s.id === id);
+      if (from < 0) return;
+      const [step] = doc.steps.splice(from, 1);
+      doc.steps.splice(toIndex > from ? toIndex - 1 : toIndex, 0, step);
+      changed();
+      focusNode(id);
+    }
+    function removeStep(id) {
+      const i = doc.steps.findIndex((s) => s.id === id);
+      if (i < 0) return;
+      doc.steps.splice(i, 1);
+      if (selectedId === id) selectedId = null;
+      changed();
+      const next = doc.steps[Math.min(i, doc.steps.length - 1)];
+      if (next) focusNode(next.id);
+    }
+    function addNote() {
+      const board = $("board");
+      const offset = (doc.notes.length % 6) * 18;
+      const note = { id: newId(), text: "", x: board.scrollLeft + 24 + offset, y: board.scrollTop + 24 + offset };
+      doc.notes.push(note);
+      changed();
+      requestAnimationFrame(() => document.querySelector(`[data-note="${note.id}"] textarea`)?.focus());
+    }
+    function focusNode(id) {
+      requestAnimationFrame(() => document.querySelector(`.node[data-id="${id}"]`)?.focus());
+    }
+
+    /* ---------- rendering ---------- */
+
+    function renderTiles() {
+      const tiles = $("tiles");
+      tiles.replaceChildren();
+      for (const type of TOOL_ORDER) {
+        if (!meta[type]) continue;
+        const tile = el("button", {
+          class: "tile", type: "button", draggable: "true",
+          "aria-label": `Add ${meta[type].label} to the end of the flow`,
+          onclick: () => addStep(type),
+          ondragstart: (e) => { dragging = { kind: "new", type }; e.dataTransfer.setData("text/plain", type); e.dataTransfer.effectAllowed = "copy"; },
+          ondragend: endDrag,
+        }, icon(type), el("span", {}, meta[type].label));
+        tiles.append(tile);
+      }
+    }
+
+    function render() {
+      $("flow-name").value = doc.name;
+      renderChain();
+      renderNotes();
+      renderProblems();
+      decorateNodes();
+    }
+
+    function renderChain() {
+      const chain = $("chain");
+      chain.replaceChildren();
+
+      if (!doc.starter) {
+        chain.append(el("button", {
+          class: "starter", type: "button",
+          onclick: () => { doc.starter = { identifier: "email" }; changed(); },
+        }, el("span", { class: "t" }, "Start with a Starter Node"), el("span", { class: "s" }, "[Click me to add a Starter Node]")));
+      } else {
+        chain.append(el("div", { class: "starter set" },
+          el("span", { class: "t" }, "Starter Node"),
+          el("span", { class: "s" }, "Asks the user for their email"),
+          el("div", { class: "ctrl" }, el("button", {
+            type: "button", title: "Remove starter", "aria-label": "Remove starter node",
+            onclick: () => { doc.starter = null; changed(); },
+          }, "✕"))));
+      }
+
+      doc.steps.forEach((step, i) => {
+        chain.append(arrow());
+        const wrap = el("div", { class: "node-wrap" });
+        const label = meta[step.type].label;
+        const node = el("div", {
+          class: "node" + (selectedId === step.id ? " selected" : ""),
+          tabindex: "0", role: "button", draggable: "true",
+          "data-id": step.id,
+          "aria-label": `${label}, step ${i + 1} of ${doc.steps.length}. Press Delete to remove, Alt+Arrow keys to move.`,
+          "aria-expanded": meta[step.type].config.length ? String(selectedId === step.id) : undefined,
+          onclick: (e) => { if (e.target.closest(".ctrl")) return; selectedId = selectedId === step.id ? null : step.id; render(); focusNode(step.id); },
+          onkeydown: (e) => onNodeKey(e, step, i),
+          ondragstart: (e) => { dragging = { kind: "move", id: step.id }; e.dataTransfer.setData("text/plain", step.id); e.dataTransfer.effectAllowed = "move"; node.classList.add("dragging"); },
+          ondragend: endDrag,
+        },
+          icon(step.type),
+          el("span", { class: "name" }, label),
+          chipText(step) ? el("span", { class: "chip" }, chipText(step)) : null,
+          el("span", { class: "ctrl" },
+            el("button", { type: "button", title: "Move up", "aria-label": `Move ${label} up`, disabled: i === 0, onclick: () => moveStep(step.id, i - 1) }, "↑"),
+            el("button", { type: "button", title: "Move down", "aria-label": `Move ${label} down`, disabled: i === doc.steps.length - 1, onclick: () => moveStep(step.id, i + 2) }, "↓"),
+            el("button", { type: "button", title: "Remove", "aria-label": `Remove ${label}`, onclick: () => removeStep(step.id) }, "✕")));
+        wrap.append(node);
+        if (selectedId === step.id && meta[step.type].config.length) wrap.append(configPanel(step));
+        chain.append(wrap);
+      });
+
+      chain.append(arrow(), el("div", { class: "drop", id: "drop-end" }, "Drag a node here, or click one in the Toolbox"));
+    }
+
+    function configPanel(step) {
+      const panel = el("div", { class: "config" });
+      for (const spec of meta[step.type].config) {
+        const input = el("input", { type: "number", min: spec.min, max: spec.max, step: "1", value: step.config[spec.key] });
+        input.addEventListener("input", () => {
+          const v = Math.round(Number(input.value));
+          if (!Number.isFinite(v) || v < spec.min || v > spec.max) return;
+          step.config[spec.key] = v;
+          const chip = document.querySelector(`.node[data-id="${step.id}"] .chip`);
+          if (chip) chip.textContent = chipText(step);
+          changed({ rerender: false });
+        });
+        input.addEventListener("change", () => { input.value = step.config[spec.key]; });
+        panel.append(el("label", {}, el("span", {}, spec.label), input));
+      }
+      return panel;
+    }
+
+    function onNodeKey(e, step, i) {
+      if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); removeStep(step.id); }
+      else if (e.altKey && e.key === "ArrowUp" && i > 0) { e.preventDefault(); moveStep(step.id, i - 1); }
+      else if (e.altKey && e.key === "ArrowDown" && i < doc.steps.length - 1) { e.preventDefault(); moveStep(step.id, i + 2); }
+      else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.currentTarget.click(); }
+      else if (e.key === "Escape") { selectedId = null; render(); focusNode(step.id); }
+    }
+
+    function renderNotes() {
+      const layer = $("notes");
+      layer.replaceChildren();
+      for (const note of doc.notes) {
+        const textarea = el("textarea", { "aria-label": "Note text", placeholder: "Write a note…", maxlength: "2000" });
+        textarea.value = note.text;
+        textarea.addEventListener("input", () => { note.text = textarea.value; changed({ rerender: false }); });
+        const grip = el("div", { class: "grip" }, el("span", {}, "Note"),
+          el("button", { type: "button", "aria-label": "Delete note", title: "Delete note", onclick: () => {
+            doc.notes = doc.notes.filter((n) => n !== note); changed();
+          } }, "✕"));
+        const card = el("div", { class: "note", "data-note": note.id, style: `left:${note.x}px;top:${note.y}px` }, grip, textarea);
+        grip.addEventListener("pointerdown", (e) => startNoteDrag(e, note, card));
+        layer.append(card);
+      }
+    }
+
+    function startNoteDrag(e, note, card) {
+      if (e.target.closest("button")) return;
+      e.preventDefault();
+      const startX = e.clientX, startY = e.clientY, ox = note.x, oy = note.y;
+      card.setPointerCapture(e.pointerId);
+      const move = (ev) => {
+        note.x = Math.max(0, Math.round(ox + ev.clientX - startX));
+        note.y = Math.max(0, Math.round(oy + ev.clientY - startY));
+        card.style.left = note.x + "px";
+        card.style.top = note.y + "px";
+      };
+      const up = () => {
+        card.removeEventListener("pointermove", move);
+        card.removeEventListener("pointerup", up);
+        card.removeEventListener("pointercancel", up);
+        if (note.x !== ox || note.y !== oy) changed({ rerender: false });
+      };
+      card.addEventListener("pointermove", move);
+      card.addEventListener("pointerup", up);
+      card.addEventListener("pointercancel", up);
+    }
+
+    function renderProblems() {
+      const box = $("problems");
+      box.replaceChildren();
+      const errors = problems.filter((p) => p.level === "error");
+      $("run").disabled = errors.length > 0;
+      $("run").title = errors.length ? "Fix the errors below to run this flow" : "Open this flow in a new tab";
+      if (problems.length === 0) {
+        box.append(el("p", { class: "ready" }, "No problems found. Press Run flow to try it."));
+        return;
+      }
+      const list = el("div", { class: "problems", role: "list", "aria-label": "Problems" });
+      for (const p of problems) {
+        const step = p.stepId && doc.steps.find((s) => s.id === p.stepId);
+        list.append(el("div", { class: `problem ${p.level}`, role: "listitem" },
+          el("b", {}, p.level === "error" ? "Error" : "Warning"),
+          el("span", {}, step ? el("button", { type: "button", onclick: () => focusNode(step.id) }, meta[step.type].label) : null,
+            step ? ": " : null, p.message)));
+      }
+      box.append(list);
+    }
+
+    function decorateNodes() {
+      for (const node of document.querySelectorAll(".node[data-id]")) {
+        const own = problems.filter((p) => p.stepId === node.dataset.id);
+        node.classList.toggle("has-error", own.some((p) => p.level === "error"));
+        node.classList.toggle("has-warning", own.some((p) => p.level === "warning"));
+      }
+    }
+
+    /* ---------- drag and drop onto the chain ---------- */
+
+    function indexFromPoint(y) {
+      const nodes = [...document.querySelectorAll(".node[data-id]")];
+      for (let i = 0; i < nodes.length; i++) {
+        const r = nodes[i].getBoundingClientRect();
+        if (y < r.top + r.height / 2) return i;
+      }
+      return nodes.length;
+    }
+
+    $("canvas").addEventListener("dragover", (e) => {
+      if (!dragging) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = dragging.kind === "new" ? "copy" : "move";
+      const idx = indexFromPoint(e.clientY);
+      if (idx !== dropIndex) { dropIndex = idx; showIndicator(idx); }
+    });
+    $("canvas").addEventListener("dragleave", (e) => {
+      if (e.relatedTarget && $("canvas").contains(e.relatedTarget)) return;
+      hideIndicator();
+    });
+
+    // Draws the marker in the gap above node `idx`, or at the top of the drop zone for the end.
+    function showIndicator(idx) {
+      const canvas = $("canvas").getBoundingClientRect();
+      const nodes = [...document.querySelectorAll(".node[data-id]")];
+      const target = nodes[idx] ? nodes[idx].getBoundingClientRect() : $("drop-end").getBoundingClientRect();
+      const above = idx > 0 ? nodes[idx - 1].closest(".node-wrap").getBoundingClientRect() : document.querySelector(".starter").getBoundingClientRect();
+      const y = (above.bottom + target.top) / 2 - canvas.top - 2;
+      const ind = $("indicator");
+      ind.style.top = `${y}px`;
+      ind.style.left = `${target.left - canvas.left}px`;
+      ind.style.width = `${target.width}px`;
+      ind.hidden = false;
+    }
+    function hideIndicator() {
+      dropIndex = null;
+      $("indicator").hidden = true;
+    }
+    $("canvas").addEventListener("drop", (e) => {
+      if (!dragging) return;
+      e.preventDefault();
+      const idx = dropIndex ?? doc.steps.length;
+      const d = dragging;
+      dragging = null;
+      hideIndicator();
+      if (d.kind === "new") addStep(d.type, idx);
+      else moveStep(d.id, idx);
+    });
+    function endDrag() {
+      dragging = null;
+      hideIndicator();
+      document.querySelectorAll(".node.dragging").forEach((n) => n.classList.remove("dragging"));
+    }
+
+    /* ---------- flows ---------- */
+
+    async function refreshPicker() {
+      const { flows } = await api("GET", "/api/builder/flows");
+      const picker = $("flow-picker");
+      picker.replaceChildren(...flows.map((f) => el("option", { value: f.id }, f.name)));
+      picker.value = doc ? doc.id : "";
+      return flows;
+    }
+
+    async function openFlow(id) {
+      if (doc) await flushSave().catch(() => {});
+      const data = await api("GET", `/api/builder/flows/${id}`);
+      doc = data.doc;
+      problems = data.problems;
+      selectedId = null;
+      history.replaceState(null, "", `/?flow=${encodeURIComponent(id)}`);
+      render();
+      setSaveState("Saved");
+      $("flow-picker").value = id;
+    }
+
+    $("flow-picker").addEventListener("change", (e) => openFlow(e.target.value));
+    $("flow-name").addEventListener("input", (e) => { doc.name = e.target.value.slice(0, 80) || "Untitled flow"; changed({ rerender: false }); });
+    $("new-flow").addEventListener("click", async () => {
+      await flushSave().catch(() => {});
+      const data = await api("POST", "/api/builder/flows", { name: "Untitled flow" });
+      await refreshPicker();
+      await openFlow(data.doc.id);
+      $("flow-name").select();
+    });
+    $("delete-flow").addEventListener("click", async () => {
+      if (!confirm(`Delete "${doc.name}"? This cannot be undone.`)) return;
+      clearTimeout(saveTimer); saveTimer = null;
+      await api("DELETE", `/api/builder/flows/${doc.id}`);
+      doc = null;
+      const flows = await refreshPicker();
+      if (flows.length) await openFlow(flows[0].id);
+      else { const data = await api("POST", "/api/builder/flows", { name: "Untitled flow" }); await refreshPicker(); await openFlow(data.doc.id); }
+    });
+    $("add-note").addEventListener("click", addNote);
+    $("run").addEventListener("click", async () => {
+      // Open the tab now, inside the click, so popup blockers allow it; point it at the flow once saved.
+      const tab = window.open("about:blank", "_blank");
+      try { await flushSave(); }
+      catch { tab?.close(); return; }
+      if (problems.some((p) => p.level === "error")) { tab?.close(); return; }
+      const url = `/run?flow=${encodeURIComponent(doc.id)}`;
+      if (tab) tab.location.href = url; else location.href = url;
+    });
+
+    document.addEventListener("keydown", (e) => {
+      const typing = e.target.closest("input, textarea, select, [contenteditable]");
+      if (!typing && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === "n" || e.key === "N")) { e.preventDefault(); addNote(); }
+    });
+    window.addEventListener("beforeunload", (e) => { if (saveTimer) { save().catch(() => {}); e.preventDefault(); } });
+
+    /* ---------- boot ---------- */
+
+    (async () => {
+      try {
+        const m = await api("GET", "/api/builder/meta");
+        for (const t of m.types) meta[t.type] = t;
+        renderTiles();
+        const flows = await refreshPicker();
+        const wanted = new URLSearchParams(location.search).get("flow");
+        const id = flows.find((f) => f.id === wanted)?.id ?? flows[0]?.id;
+        if (id) await openFlow(id);
+        else { const data = await api("POST", "/api/builder/flows", { name: "Untitled flow" }); await refreshPicker(); await openFlow(data.doc.id); }
+      } catch (err) {
+        $("chain").replaceChildren(el("p", {}, `Could not load the whiteboard: ${err.message}`));
+      }
+    })();
+  </script>
+</body>
+</html>
