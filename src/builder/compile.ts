@@ -13,6 +13,8 @@ import { checkDoc } from "./document.js";
 import type { BuilderDoc, BuilderStep, Problem } from "./types.js";
 
 export interface BuilderUserDirectory extends UserDirectory {
+  /** Returns undefined if the email is already taken. */
+  createUser(email: string, passwordHash: string): Promise<UserRecord | undefined>;
   addPasskey(userId: string, passkey: StoredPasskey): Promise<void>;
   updatePasskeyCounter(userId: string, credentialId: string, counter: number): Promise<void>;
 }
@@ -20,17 +22,17 @@ export interface BuilderUserDirectory extends UserDirectory {
 export interface BuilderDeps {
   users: BuilderUserDirectory;
   verifyPassword: (password: string, hash: string) => Promise<boolean>;
+  hashPassword: (password: string) => Promise<string>;
   /** Hash of a throwaway password, checked for unknown emails so timing does not reveal them. */
   dummyPasswordHash: string;
-  sendCode: (user: UserRecord, code: string) => Promise<void>;
+  /** Delivers a one-time code. `to` may be an email with no account yet, when the flow allows sign-up. */
+  sendCode: (to: { email: string }, code: string) => Promise<void>;
   webauthn: { rpID: string; rpName: string; origin: string };
   now?: () => number;
 }
 
 export type CompileResult = { ok: true; flow: FlowDefinition; problems: Problem[] } | { ok: false; problems: Problem[] };
 
-const MAX_CODE_ATTEMPTS = 5;
-const MAX_CODE_SENDS = 3;
 const MAX_PASSKEY_ATTEMPTS = 5;
 const GENERIC_LOGIN_ERROR = "Email or password is incorrect.";
 
@@ -100,15 +102,18 @@ export function compileDoc(doc: BuilderDoc, deps: BuilderDeps, flowId = `builder
   const entryOf = (i: number) => doc.steps[i]!.id;
 
   // Starter node: ask for the email and look the user up. Unknown emails continue, so this step reveals nothing.
+  const starter = doc.starter!.config;
+  const signupLater = doc.steps.some((s) => s.type === "password" && s.config.allowSignup === true);
+
   nodes.push({
     id: "start",
     kind: "screen",
-    title: doc.name,
-    description: "Enter your email to continue.",
+    title: String(starter.title),
+    description: String(starter.help),
     fields: [{ name: "email", label: "Email", type: "email", required: true, autocomplete: "username webauthn", maxLength: 254 }],
     handle: async ({ email }) => {
       const user = await deps.users.findByEmail(email!);
-      return { outcome: "next", context: { email, userId: user?.id ?? null, factors: [] } };
+      return { outcome: "next", context: { email: email!.toLowerCase(), userId: user?.id ?? null, factors: [] } };
     },
   });
   transitions.start = { next: entryOf(0) };
@@ -127,13 +132,26 @@ export function compileDoc(doc: BuilderDoc, deps: BuilderDeps, flowId = `builder
 
     switch (step.type) {
       case "password": {
-        const maxAttempts = step.config.maxAttempts!;
+        const maxAttempts = step.config.maxAttempts as number;
+        const allowSignup = step.config.allowSignup === true;
+        const minLength = step.config.minLength as number;
         const failed = failTerminal("Access denied", "Too many incorrect passwords.");
         const locked = `${step.id}:locked`;
         add({ id: locked, kind: "terminal", status: "failure", title: "Account temporarily locked", message: "Too many failed attempts. Try again in a few minutes." });
+
+        // Router: known users enter their password, unknown users create one if sign-up is on.
         add(
           {
             id: step.id,
+            kind: "logic",
+            run: (ctx) => ({ outcome: !ctx.userId && allowSignup ? "create" : "enter" }),
+          },
+          allowSignup ? { enter: `${step.id}:enter`, create: `${step.id}:create` } : { enter: `${step.id}:enter` },
+        );
+
+        add(
+          {
+            id: `${step.id}:enter`,
             kind: "screen",
             title: "Enter your password",
             submitLabel: "Continue",
@@ -162,11 +180,43 @@ export function compileDoc(doc: BuilderDoc, deps: BuilderDeps, flowId = `builder
           },
           { pass: next!, fail: failed, locked },
         );
+
+        if (allowSignup) {
+          add(
+            {
+              id: `${step.id}:create`,
+              kind: "screen",
+              title: "Create your account",
+              submitLabel: "Create account",
+              fields: [
+                { name: "password", label: "Choose a password", type: "password", required: true, autocomplete: "new-password", minLength, maxLength: 1024 },
+                {
+                  name: "confirm",
+                  label: "Repeat the password",
+                  type: "password",
+                  required: true,
+                  autocomplete: "new-password",
+                  maxLength: 1024,
+                  validate: (v, input) => (v !== input.password ? "The passwords do not match." : undefined),
+                },
+              ],
+              render: (ctx) => ({ email: ctx.email, description: `There is no account for ${String(ctx.email)} yet. Choose a password to create one.` }),
+              handle: async ({ password }, ctx): Promise<NodeResult> => {
+                const user = await deps.users.createUser(ctx.email as string, await deps.hashPassword(password!));
+                if (!user) return { outcome: RETRY, error: "An account with this email was just created. Start again to sign in." };
+                return { outcome: "pass", context: { userId: user.id, accountCreated: true, ...withFactor(ctx, "password") } };
+              },
+            },
+            { pass: next! },
+          );
+        }
         break;
       }
 
       case "email-code": {
-        const ttlMs = step.config.codeMinutes! * 60_000;
+        const ttlMs = (step.config.codeMinutes as number) * 60_000;
+        const maxWrong = step.config.maxWrong as number;
+        const maxSends = 1 + (step.config.maxResends as number);
         const failed = failTerminal("Verification failed", "Too many incorrect codes. Start again to get a new one.");
         type CodeState = { codeHash: string; expiresAt: number; attempts: number; sends: number; notice?: string };
         add(
@@ -176,15 +226,17 @@ export function compileDoc(doc: BuilderDoc, deps: BuilderDeps, flowId = `builder
             run: async (ctx) => {
               const prev = state<CodeState>(ctx, step);
               const sends = prev.sends ?? 0;
-              if (sends >= MAX_CODE_SENDS) {
+              if (sends >= maxSends) {
                 return { outcome: "sent", context: { [stateKey(step)]: { ...prev, notice: "No more codes can be sent. Use the last code you received." } } };
               }
               const code = randomInt(0, 1_000_000).toString().padStart(6, "0");
               const user = ctx.userId ? await deps.users.findById(ctx.userId as string) : undefined;
-              // Unknown emails get the same screen, with a code nobody received.
-              if (user) await deps.sendCode(user, code);
+              // With sign-up on, new emails get a real code so they can prove they own the address.
+              // Otherwise unknown emails get the same screen, with a code nobody received.
+              const deliver = !!user || signupLater;
+              if (deliver) await deps.sendCode({ email: String(ctx.email) }, code);
               const next: CodeState = {
-                codeHash: user ? sha256(code) : sha256(randomBytes(16).toString("hex")),
+                codeHash: deliver ? sha256(code) : sha256(randomBytes(16).toString("hex")),
                 expiresAt: now() + ttlMs,
                 attempts: 0,
                 sends: sends + 1,
@@ -203,7 +255,7 @@ export function compileDoc(doc: BuilderDoc, deps: BuilderDeps, flowId = `builder
             submitLabel: "Verify",
             fields: [
               { name: "code", label: "Verification code", type: "otp", autocomplete: "one-time-code", maxLength: 6, pattern: /^\d{6}$/ },
-              { name: "resend", label: "Send me a new code", type: "checkbox" },
+              ...(maxSends > 1 ? [{ name: "resend", label: "Send me a new code", type: "checkbox" as const }] : []),
             ],
             render: (ctx) => ({ sentTo: maskEmail(String(ctx.email ?? "")), notice: state<CodeState>(ctx, step).notice }),
             handle: async ({ code, resend }, ctx): Promise<NodeResult> => {
@@ -216,10 +268,10 @@ export function compileDoc(doc: BuilderDoc, deps: BuilderDeps, flowId = `builder
                 return { outcome: RETRY, error: "That code has expired. Request a new one.", context: { [stateKey(step)]: { ...quiet, attempts } } };
               }
               if (!sameHex(sha256(code), st.codeHash)) {
-                if (attempts >= MAX_CODE_ATTEMPTS) return { outcome: "fail" };
+                if (attempts >= maxWrong) return { outcome: "fail" };
                 return { outcome: RETRY, error: "That code is not correct.", context: { [stateKey(step)]: { ...quiet, attempts } } };
               }
-              return { outcome: "pass", context: { ...withFactor(ctx, "email"), [stateKey(step)]: undefined } };
+              return { outcome: "pass", context: { ...withFactor(ctx, "email"), emailVerified: ctx.email, [stateKey(step)]: undefined } };
             },
           },
           { pass: next!, resend: step.id, fail: failed },
@@ -228,14 +280,16 @@ export function compileDoc(doc: BuilderDoc, deps: BuilderDeps, flowId = `builder
       }
 
       case "age-check": {
-        const minAge = step.config.minAge!;
-        const failed = failTerminal("Access denied", `You must be at least ${minAge} to continue.`);
+        const minAge = step.config.minAge as number;
+        const maxAge = step.config.maxAge as number;
+        const rule = maxAge >= 150 ? `at least ${minAge}` : minAge <= 0 ? `${maxAge} or younger` : `between ${minAge} and ${maxAge}`;
+        const failed = failTerminal("Access denied", `You must be ${rule} to continue.`);
         add(
           {
             id: step.id,
             kind: "screen",
             title: "Confirm your age",
-            description: `You must be at least ${minAge} to continue.`,
+            description: `You must be ${rule} to continue.`,
             fields: [
               {
                 name: "dob",
@@ -248,7 +302,7 @@ export function compileDoc(doc: BuilderDoc, deps: BuilderDeps, flowId = `builder
             ],
             handle: async ({ dob }): Promise<NodeResult> => {
               const age = ageOn(dob!, new Date(now()))!;
-              return { outcome: age >= minAge ? "pass" : "fail" };
+              return { outcome: age >= minAge && age <= maxAge ? "pass" : "fail" };
             },
           },
           { pass: next!, fail: failed },
@@ -258,6 +312,9 @@ export function compileDoc(doc: BuilderDoc, deps: BuilderDeps, flowId = `builder
 
       case "passkey": {
         type PasskeyState = { mode: "login" | "register"; challenge: string; options: unknown; attempts: number };
+        const allowCreate = step.config.allowCreate === true;
+        const requireUV = step.config.requireVerification === true;
+        const uv = requireUV ? "required" : "preferred";
         const failed = failTerminal("Passkey check failed", "We could not verify your passkey.");
         const missing = `${step.id}:missing`;
         add({
@@ -265,7 +322,9 @@ export function compileDoc(doc: BuilderDoc, deps: BuilderDeps, flowId = `builder
           kind: "terminal",
           status: "failure",
           title: "No passkey available",
-          message: "There is no passkey for this account. Sign in with a flow that lets you add one first.",
+          message: allowCreate
+            ? "There is no passkey for this account. Sign in with a flow that lets you add one first."
+            : "This sign-in only accepts passkeys that are already set up, and there is none for this account.",
         });
 
         const prepare = async (ctx: FlowContext, attempts: number): Promise<PasskeyState | undefined> => {
@@ -275,20 +334,20 @@ export function compileDoc(doc: BuilderDoc, deps: BuilderDeps, flowId = `builder
           if (passkeys.length > 0) {
             const options = await generateAuthenticationOptions({
               rpID: deps.webauthn.rpID,
-              userVerification: "preferred",
+              userVerification: uv,
               allowCredentials: passkeys.map((p) => ({ id: p.id, transports: p.transports as AuthenticatorTransportFuture[] | undefined })),
             });
             return { mode: "login", challenge: options.challenge, options, attempts };
           }
           // Enrolling is only safe once an earlier step has proved who this is.
-          if (factors(ctx).length === 0) return undefined;
+          if (!allowCreate || factors(ctx).length === 0) return undefined;
           const options = await generateRegistrationOptions({
             rpName: deps.webauthn.rpName,
             rpID: deps.webauthn.rpID,
             userName: user.email,
             userID: new TextEncoder().encode(user.id),
             attestationType: "none",
-            authenticatorSelection: { residentKey: "preferred", userVerification: "preferred" },
+            authenticatorSelection: { residentKey: "preferred", userVerification: uv },
           });
           return { mode: "register", challenge: options.challenge, options, attempts };
         };
@@ -345,7 +404,7 @@ export function compileDoc(doc: BuilderDoc, deps: BuilderDeps, flowId = `builder
 
               try {
                 if (st.mode === "register") {
-                  const result = await verifyRegistrationResponse({ response: response as RegistrationResponseJSON, ...expected, requireUserVerification: false });
+                  const result = await verifyRegistrationResponse({ response: response as RegistrationResponseJSON, ...expected, requireUserVerification: requireUV });
                   if (!result.verified) return retry("We could not create that passkey. Try again.");
                   const c = result.registrationInfo.credential;
                   await deps.users.addPasskey(user.id, {
@@ -364,7 +423,7 @@ export function compileDoc(doc: BuilderDoc, deps: BuilderDeps, flowId = `builder
                 const result = await verifyAuthenticationResponse({
                   response: auth,
                   ...expected,
-                  requireUserVerification: false,
+                  requireUserVerification: requireUV,
                   credential: {
                     id: stored.id,
                     publicKey: stored.publicKey as Uint8Array<ArrayBuffer>,
@@ -401,14 +460,21 @@ export function compileDoc(doc: BuilderDoc, deps: BuilderDeps, flowId = `builder
           id: `${step.id}:done`,
           kind: "terminal",
           status: "success",
-          title: "You're signed in",
-          result: (ctx) => ({ userId: ctx.userId, email: ctx.email, factors: factors(ctx), passkeyCreated: ctx.passkeyCreated === true }),
+          title: String(step.config.welcome),
+          result: (ctx) => ({
+            userId: ctx.userId,
+            email: ctx.email,
+            factors: factors(ctx),
+            passkeyCreated: ctx.passkeyCreated === true,
+            accountCreated: ctx.accountCreated === true,
+            sessionHours: step.config.sessionHours,
+          }),
         });
         break;
       }
 
       case "deny": {
-        add({ id: step.id, kind: "terminal", status: "failure", title: "Access denied", message: "This flow ends here. You have been signed out." });
+        add({ id: step.id, kind: "terminal", status: "failure", title: "Access denied", message: String(step.config.message) });
         break;
       }
     }

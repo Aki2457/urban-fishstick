@@ -1,4 +1,4 @@
-import { randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
+import { randomBytes, randomUUID, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import type { StoredPasskey, UserDirectory, UserRecord } from "./login.js";
 
@@ -34,6 +34,18 @@ export class InMemoryUserDirectory implements UserDirectory {
   add(user: UserRecord): this {
     this.byId.set(user.id, user);
     return this;
+  }
+
+  all(): UserRecord[] {
+    return [...this.byId.values()];
+  }
+
+  /** Creates an account. Returns undefined if the email is already taken. */
+  async createUser(email: string, passwordHash: string): Promise<UserRecord | undefined> {
+    if (await this.findByEmail(email)) return undefined;
+    const user: UserRecord = { id: randomUUID(), email: email.toLowerCase(), passwordHash, mfaEnabled: false };
+    this.byId.set(user.id, user);
+    return user;
   }
 
   async findByEmail(email: string): Promise<UserRecord | undefined> {

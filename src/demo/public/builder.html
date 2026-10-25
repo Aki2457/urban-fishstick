@@ -58,6 +58,8 @@
     .btn { border: 0; border-radius: 10px; padding: 9px 18px; background: var(--node); color: var(--node-text);
            cursor: pointer; font-size: .95rem; }
     .btn:hover { background: var(--node-hover); }
+    .btn.small { padding: 6px 12px; font-size: .85rem; border-radius: 8px; }
+    .btn.small.live::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #3fb950; margin-right: 6px; vertical-align: 1px; }
     .btn.primary { background: var(--accent); color: #fff; font-weight: 600; }
     .btn.primary:disabled { opacity: .45; cursor: not-allowed; }
     .btn.quiet { background: transparent; color: var(--muted); padding: 9px 10px; }
@@ -117,10 +119,18 @@
     .starter .ctrl { position: absolute; top: 12px; right: 12px; opacity: 1; }
     .starter .ctrl button { background: rgba(0,0,0,.08); color: var(--text); }
 
-    .config { margin-top: 8px; background: var(--panel); border-radius: 10px; padding: 12px 16px; font-size: .95rem; }
-    .config label { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-    .config input { width: 90px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--arrow); background: var(--board); }
-    .config .hint { color: var(--muted); font-size: .85rem; margin: 0; }
+    .starter-wrap { width: 100%; }
+    .starter.selected { outline: 3px solid var(--accent); outline-offset: -3px; }
+    .config { margin-top: 8px; background: var(--panel); border-radius: 10px; padding: 14px 16px; font-size: .95rem; display: grid; gap: 10px; }
+    .config-title { font-weight: 700; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+    .config .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .config .row.check { justify-content: flex-start; }
+    .config .row.check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+    .config .row.text { flex-direction: column; align-items: stretch; gap: 4px; }
+    .config input[type=number], .config input[type=text] { padding: 6px 8px; border-radius: 6px; border: 1px solid var(--arrow); background: var(--board); }
+    .config input[type=number] { width: 90px; }
+    .config input[aria-invalid=true] { border-color: var(--error); }
+    .config .hint { color: var(--muted); font-size: .85rem; margin: -6px 0 0; }
 
     .drop { width: 64%; min-width: 280px; min-height: 90px; border: 2px dashed var(--arrow); border-radius: 10px;
             display: grid; place-items: center; color: var(--muted); text-align: center; padding: 12px; font-size: .95rem; }
@@ -129,12 +139,31 @@
     .indicator { position: absolute; height: 4px; border-radius: 2px; background: var(--accent); pointer-events: none; z-index: 4; }
 
     /* Notes */
-    .note { position: absolute; width: 220px; background: var(--note); color: var(--note-text); border: 1px solid var(--note-edge);
+    .note { position: absolute; width: 280px; background: var(--note); color: var(--note-text); border: 1px solid var(--note-edge);
             border-radius: 6px; box-shadow: 0 6px 16px rgba(0,0,0,.12); z-index: 5; }
     .note .grip { display: flex; justify-content: space-between; align-items: center; padding: 4px 6px 0 10px;
                   cursor: move; font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; opacity: .7; touch-action: none; }
-    .note .grip button { border: 0; background: transparent; cursor: pointer; font-size: 1rem; color: inherit; padding: 2px 6px; }
-    .note textarea { display: block; width: 100%; min-height: 90px; border: 0; background: transparent; resize: vertical;
+    .note .grip button { border: 0; background: transparent; cursor: pointer; font-size: .8rem; color: inherit; padding: 2px 6px; border-radius: 4px; }
+    .note .grip button:hover { background: rgba(0,0,0,.08); }
+    .note .grip .acts { display: flex; gap: 2px; }
+    .note .md { padding: 4px 12px 10px; font-size: .95rem; max-height: 420px; overflow: auto; overflow-wrap: anywhere; cursor: text; min-height: 40px; }
+    .note .md:empty::before { content: "Empty note. Double-click to write."; opacity: .6; }
+    .note .md > :first-child { margin-top: 0; } .note .md > :last-child { margin-bottom: 0; }
+    .note .md h1, .note .md h2, .note .md h3 { line-height: 1.25; margin: .6em 0 .3em; }
+    .note .md h1 { font-size: 1.3rem; } .note .md h2 { font-size: 1.15rem; } .note .md h3 { font-size: 1rem; }
+    .note .md p, .note .md ul, .note .md ol, .note .md pre, .note .md blockquote, .note .md table { margin: .4em 0; }
+    .note .md ul, .note .md ol { padding-left: 1.3em; }
+    .note .md img { max-width: 100%; height: auto; border-radius: 4px; display: block; }
+    .note .md a { color: inherit; text-decoration: underline; }
+    .note .md code { background: rgba(0,0,0,.08); padding: 0 4px; border-radius: 3px; font-size: .88em; }
+    .note .md pre { background: rgba(0,0,0,.08); padding: 8px; border-radius: 4px; overflow-x: auto; }
+    .note .md pre code { background: none; padding: 0; }
+    .note .md blockquote { border-left: 3px solid var(--note-edge); padding-left: 8px; margin-left: 0; opacity: .85; }
+    .note .md table { border-collapse: collapse; font-size: .88rem; display: block; overflow-x: auto; }
+    .note .md th, .note .md td { border: 1px solid var(--note-edge); padding: 2px 6px; }
+    .note .tip { font-size: .75rem; opacity: .7; padding: 0 12px 8px; }
+    .note .note-error { font-size: .8rem; color: var(--error); padding: 0 12px 8px; }
+    .note textarea { display: block; width: 100%; min-height: 140px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; border: 0; background: transparent; resize: vertical;
                      padding: 4px 10px 10px; color: inherit; font-size: .95rem; }
     .note textarea:focus-visible { outline: none; }
     .note:focus-within { outline: 2px solid var(--focus); outline-offset: 1px; }
@@ -147,6 +176,41 @@
     .problem b { flex: none; }
     .problem button { all: unset; cursor: pointer; text-decoration: underline; }
     .ready { max-width: 660px; margin: 28px auto 0; color: var(--muted); text-align: center; font-size: .92rem; }
+
+    /* Publish dialog */
+    dialog.pub { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 32px); border: 0; border-radius: 12px; padding: 0;
+                 background: var(--board); color: var(--text); box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+    dialog.pub::backdrop { background: rgba(10,12,16,.45); }
+    .pub form { display: grid; gap: 16px; padding: 22px 24px 20px; }
+    .pub h2 { margin: 0; font-size: 1.4rem; }
+    .pub .lead { margin: -8px 0 0; color: var(--muted); font-size: .92rem; }
+    .pub .live-box { background: var(--panel); border-radius: 8px; padding: 10px 14px; font-size: .92rem; display: grid; gap: 4px; }
+    .pub .live-box a { color: var(--accent); font-weight: 600; overflow-wrap: anywhere; }
+    .pub .live-box .stale { color: var(--warning); }
+    .pub label.f { display: grid; gap: 6px; font-weight: 600; font-size: .9rem; }
+    .pub input[type=text] { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--arrow); background: var(--board); font-weight: 400; }
+    .pub .slug { display: flex; align-items: center; border: 1px solid var(--arrow); border-radius: 6px; overflow: hidden; background: var(--board); }
+    .pub .slug span { padding: 8px 0 8px 10px; color: var(--muted); font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
+    .pub .slug input { border: 0 !important; flex: 1; min-width: 0; padding-left: 2px !important; }
+    .pub .slug:focus-within { outline: 2px solid var(--focus); outline-offset: 1px; }
+    .pub .slug input:focus-visible { outline: none; }
+    .pub .md-field { display: grid; gap: 6px; }
+    .pub .md-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 600; font-size: .9rem; }
+    .pub .tabs { display: flex; gap: 2px; background: var(--panel); border-radius: 6px; padding: 2px; }
+    .pub .tabs button { border: 0; background: transparent; padding: 3px 10px; border-radius: 4px; font-size: .8rem; cursor: pointer; color: var(--muted); }
+    .pub .tabs button[aria-selected=true] { background: var(--board); color: var(--text); }
+    .pub textarea { width: 100%; min-height: 140px; padding: 10px; border-radius: 6px; border: 1px solid var(--arrow); background: var(--board);
+                    font: .88rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
+    .pub .preview { min-height: 140px; max-height: 320px; overflow: auto; border: 1px solid var(--arrow); border-radius: 6px; padding: 10px 14px; overflow-wrap: anywhere; }
+    .pub .preview img { max-width: 100%; height: auto; }
+    .pub .preview > :first-child { margin-top: 0; }
+    .pub .sub { color: var(--muted); font-size: .82rem; font-weight: 400; }
+    .pub .msg { padding: 10px 12px; border-radius: 8px; font-size: .9rem; }
+    .pub .msg.error { background: var(--error-bg); color: var(--error); }
+    .pub .msg ul { margin: 4px 0 0; padding-left: 18px; }
+    .pub .actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center; }
+    .pub .actions .spacer { flex: 1; }
+    .pub .btn.danger { background: transparent; color: var(--error); border: 1px solid currentColor; }
 
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
@@ -180,6 +244,7 @@
     <header class="head">
       <h1>Whiteboard</h1>
       <button class="btn" id="add-note" type="button" aria-keyshortcuts="N">Add a note [N]</button>
+      <button class="btn small" id="publish" type="button" aria-haspopup="dialog">Publish</button>
       <div class="flowbar">
         <label class="sr-only" for="flow-picker">Open flow</label>
         <select id="flow-picker"></select>
@@ -208,6 +273,42 @@
     </main>
   </div>
 
+  <dialog class="pub" id="publish-dialog" aria-labelledby="pub-title">
+    <form method="dialog" id="pub-form" novalidate>
+      <h2 id="pub-title">Publish as a website</h2>
+      <p class="lead">You get a public page with this flow as its sign-in, and a members page only signed-in users can open.</p>
+      <div class="live-box" id="pub-live" hidden></div>
+      <div class="msg error" id="pub-error" role="alert" hidden></div>
+      <label class="f">Site title
+        <input type="text" id="pub-title-input" maxlength="80" required>
+      </label>
+      <label class="f">Address
+        <span class="slug"><span id="pub-origin"></span><input type="text" id="pub-slug" maxlength="40" required spellcheck="false" autocapitalize="off" aria-describedby="pub-slug-hint"></span>
+        <span class="sub" id="pub-slug-hint">Lowercase letters, numbers and dashes.</span>
+      </label>
+      <div class="md-field" data-md="public">
+        <div class="md-head"><span id="pub-public-label">Public page <span class="sub">Markdown, shown to everyone</span></span>
+          <span class="tabs" role="tablist"><button type="button" role="tab" aria-selected="true" data-tab="write">Write</button><button type="button" role="tab" aria-selected="false" data-tab="preview">Preview</button></span></div>
+        <textarea id="pub-public" aria-labelledby="pub-public-label"></textarea>
+        <div class="preview" hidden></div>
+      </div>
+      <div class="md-field" data-md="members">
+        <div class="md-head"><span id="pub-members-label">Members page <span class="sub">Markdown, signed-in users only</span></span>
+          <span class="tabs" role="tablist"><button type="button" role="tab" aria-selected="true" data-tab="write">Write</button><button type="button" role="tab" aria-selected="false" data-tab="preview">Preview</button></span></div>
+        <textarea id="pub-members" aria-labelledby="pub-members-label"></textarea>
+        <div class="preview" hidden></div>
+      </div>
+      <div class="actions">
+        <button class="btn danger" id="pub-unpublish" type="button" hidden>Unpublish</button>
+        <span class="spacer"></span>
+        <button class="btn quiet" type="button" id="pub-cancel">Cancel</button>
+        <button class="btn primary" type="submit" id="pub-submit">Publish</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/vendor/marked.js"></script>
+  <script src="/vendor/purify.js"></script>
   <script>
     const ICONS = {
       starter: '<circle cx="12" cy="12" r="9"/><path d="M10 8.5l5 3.5-5 3.5z"/>',
@@ -221,12 +322,14 @@
     const TOOL_ORDER = ["authenticate", "password", "email-code", "age-check", "passkey", "deny"];
 
     const $ = (id) => document.getElementById(id);
-    let meta = {};            // type -> { label, config: [{key,label,min,max,default}] }
+    let meta = {};            // type -> { label, settings: [{kind,key,label,help,...}] }
+    let starterMeta = { label: "Starter Node", settings: [] };
     let doc = null;           // the flow being edited
     let problems = [];
     let selectedId = null;
     let dragging = null;      // { kind: "new", type } | { kind: "move", id }
     let dropIndex = null;
+    let editingNoteId = null; // the note showing its Markdown source
 
     /* ---------- helpers ---------- */
 
@@ -268,15 +371,27 @@
     const newId = () => Math.random().toString(36).slice(2, 12).padEnd(10, "0");
 
     function defaults(type) {
+      return defaultsFor(meta[type].settings);
+    }
+    function defaultsFor(settings) {
       const config = {};
-      for (const spec of meta[type].config) config[spec.key] = spec.default;
+      for (const spec of settings) config[spec.key] = spec.default;
       return config;
     }
 
     function chipText(step) {
-      if (step.type === "age-check") return `${step.config.minAge}+`;
-      if (step.type === "password") return `${step.config.maxAttempts} tries`;
-      if (step.type === "email-code") return `${step.config.codeMinutes} min`;
+      const c = step.config;
+      if (step.type === "age-check") {
+        if (c.maxAge >= 150) return c.minAge > 0 ? `${c.minAge}+` : "any age";
+        return `${c.minAge}–${c.maxAge}`;
+      }
+      if (step.type === "password") return `${c.maxAttempts} tries${c.allowSignup ? " · sign-up" : ""}`;
+      if (step.type === "email-code") return `${c.codeMinutes} min`;
+      if (step.type === "passkey") {
+        const bits = [c.allowCreate ? null : "existing only", c.requireVerification ? "PIN/biometric" : null].filter(Boolean);
+        return bits.length ? bits.join(" · ") : null;
+      }
+      if (step.type === "authenticate") return `${c.sessionHours}h session`;
       return null;
     }
 
@@ -287,7 +402,7 @@
         body: body ? JSON.stringify(body) : undefined,
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      if (!res.ok) throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { status: res.status, problems: data.problems });
       return data;
     }
 
@@ -336,7 +451,7 @@
     function addStep(type, index = doc.steps.length) {
       const step = { id: newId(), type, config: defaults(type) };
       doc.steps.splice(index, 0, step);
-      selectedId = meta[type].config.length ? step.id : null;
+      selectedId = step.id;
       changed();
       focusNode(step.id);
     }
@@ -362,6 +477,7 @@
       const offset = (doc.notes.length % 6) * 18;
       const note = { id: newId(), text: "", x: board.scrollLeft + 24 + offset, y: board.scrollTop + 24 + offset };
       doc.notes.push(note);
+      editingNoteId = note.id;
       changed();
       requestAnimationFrame(() => document.querySelector(`[data-note="${note.id}"] textarea`)?.focus());
     }
@@ -402,16 +518,36 @@
       if (!doc.starter) {
         chain.append(el("button", {
           class: "starter", type: "button",
-          onclick: () => { doc.starter = { identifier: "email" }; changed(); },
+          onclick: () => {
+            doc.starter = { identifier: "email", config: defaultsFor(starterMeta.settings) };
+            selectedId = "starter";
+            changed();
+          },
         }, el("span", { class: "t" }, "Start with a Starter Node"), el("span", { class: "s" }, "[Click me to add a Starter Node]")));
       } else {
-        chain.append(el("div", { class: "starter set" },
-          el("span", { class: "t" }, "Starter Node"),
-          el("span", { class: "s" }, "Asks the user for their email"),
+        const selected = selectedId === "starter";
+        const card = el("div", {
+          class: "starter set" + (selected ? " selected" : ""),
+          tabindex: "0", role: "button", "data-id": "starter",
+          "aria-expanded": String(selected),
+          "aria-label": "Starter Node. Press Enter for settings.",
+          onclick: (e) => { if (e.target.closest(".ctrl")) return; toggleSelect("starter"); },
+          onkeydown: (e) => {
+            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleSelect("starter"); }
+            else if (e.key === "Escape") { selectedId = null; render(); }
+          },
+        },
+          el("span", { class: "t" }, String(doc.starter.config.title || "Starter Node")),
+          el("span", { class: "s" }, "Starter Node · asks the user for their email"),
           el("div", { class: "ctrl" }, el("button", {
             type: "button", title: "Remove starter", "aria-label": "Remove starter node",
-            onclick: () => { doc.starter = null; changed(); },
-          }, "✕"))));
+            onclick: () => { doc.starter = null; if (selectedId === "starter") selectedId = null; changed(); },
+          }, "✕")));
+        const wrap = el("div", { class: "starter-wrap" }, card);
+        if (selected) wrap.append(settingsPanel(starterMeta, doc.starter.config, () => {
+          card.querySelector(".t").textContent = String(doc.starter.config.title || "Starter Node");
+        }));
+        chain.append(wrap);
       }
 
       doc.steps.forEach((step, i) => {
@@ -422,9 +558,9 @@
           class: "node" + (selectedId === step.id ? " selected" : ""),
           tabindex: "0", role: "button", draggable: "true",
           "data-id": step.id,
-          "aria-label": `${label}, step ${i + 1} of ${doc.steps.length}. Press Delete to remove, Alt+Arrow keys to move.`,
-          "aria-expanded": meta[step.type].config.length ? String(selectedId === step.id) : undefined,
-          onclick: (e) => { if (e.target.closest(".ctrl")) return; selectedId = selectedId === step.id ? null : step.id; render(); focusNode(step.id); },
+          "aria-label": `${label}, step ${i + 1} of ${doc.steps.length}. Enter opens settings. Delete removes it. Alt+Arrow keys move it.`,
+          "aria-expanded": String(selectedId === step.id),
+          onclick: (e) => { if (e.target.closest(".ctrl")) return; toggleSelect(step.id); },
           onkeydown: (e) => onNodeKey(e, step, i),
           ondragstart: (e) => { dragging = { kind: "move", id: step.id }; e.dataTransfer.setData("text/plain", step.id); e.dataTransfer.effectAllowed = "move"; node.classList.add("dragging"); },
           ondragend: endDrag,
@@ -437,27 +573,64 @@
             el("button", { type: "button", title: "Move down", "aria-label": `Move ${label} down`, disabled: i === doc.steps.length - 1, onclick: () => moveStep(step.id, i + 2) }, "↓"),
             el("button", { type: "button", title: "Remove", "aria-label": `Remove ${label}`, onclick: () => removeStep(step.id) }, "✕")));
         wrap.append(node);
-        if (selectedId === step.id && meta[step.type].config.length) wrap.append(configPanel(step));
+        if (selectedId === step.id) {
+          wrap.append(settingsPanel(meta[step.type], step.config, () => {
+            const text = chipText(step);
+            let chip = node.querySelector(".chip");
+            if (text && !chip) { chip = el("span", { class: "chip" }); node.querySelector(".name").after(chip); }
+            if (chip) { chip.textContent = text || ""; chip.hidden = !text; }
+          }));
+        }
         chain.append(wrap);
       });
 
       chain.append(arrow(), el("div", { class: "drop", id: "drop-end" }, "Drag a node here, or click one in the Toolbox"));
     }
 
-    function configPanel(step) {
-      const panel = el("div", { class: "config" });
-      for (const spec of meta[step.type].config) {
-        const input = el("input", { type: "number", min: spec.min, max: spec.max, step: "1", value: step.config[spec.key] });
-        input.addEventListener("input", () => {
-          const v = Math.round(Number(input.value));
-          if (!Number.isFinite(v) || v < spec.min || v > spec.max) return;
-          step.config[spec.key] = v;
-          const chip = document.querySelector(`.node[data-id="${step.id}"] .chip`);
-          if (chip) chip.textContent = chipText(step);
-          changed({ rerender: false });
-        });
-        input.addEventListener("change", () => { input.value = step.config[spec.key]; });
-        panel.append(el("label", {}, el("span", {}, spec.label), input));
+    function toggleSelect(id) {
+      selectedId = selectedId === id ? null : id;
+      render();
+      if (id === "starter") requestAnimationFrame(() => document.querySelector('[data-id="starter"]')?.focus());
+      else focusNode(id);
+    }
+
+    // One settings form for any node. `onChange` refreshes the node's summary without a full re-render,
+    // so typing in a field keeps focus.
+    function settingsPanel(info, config, onChange) {
+      const panel = el("div", { class: "config", role: "group", "aria-label": `${info.label} settings` });
+      panel.append(el("div", { class: "config-title" }, `${info.label} settings`));
+      if (!info.settings.length) {
+        panel.append(el("p", { class: "hint" }, "This node has no settings."));
+        return panel;
+      }
+      const commit = () => { onChange(); changed({ rerender: false }); };
+      for (const spec of info.settings) {
+        const id = `set-${Math.random().toString(36).slice(2, 8)}`;
+        const helpId = spec.help ? `${id}-help` : undefined;
+        let row;
+        if (spec.kind === "boolean") {
+          const input = el("input", { type: "checkbox", id, "aria-describedby": helpId });
+          input.checked = config[spec.key] === true;
+          input.addEventListener("change", () => { config[spec.key] = input.checked; commit(); });
+          row = el("div", { class: "row check" }, input, el("label", { for: id }, spec.label));
+        } else if (spec.kind === "number") {
+          const input = el("input", { type: "number", id, min: spec.min, max: spec.max, step: "1", inputmode: "numeric", value: config[spec.key], "aria-describedby": helpId });
+          input.addEventListener("input", () => {
+            const v = Math.round(Number(input.value));
+            if (input.value === "" || !Number.isFinite(v) || v < spec.min || v > spec.max) { input.setAttribute("aria-invalid", "true"); return; }
+            input.removeAttribute("aria-invalid");
+            config[spec.key] = v;
+            commit();
+          });
+          input.addEventListener("change", () => { input.value = config[spec.key]; input.removeAttribute("aria-invalid"); });
+          row = el("div", { class: "row" }, el("label", { for: id }, spec.label), input);
+        } else {
+          const input = el("input", { type: "text", id, maxlength: spec.maxLength, value: config[spec.key], "aria-describedby": helpId });
+          input.addEventListener("input", () => { config[spec.key] = input.value; commit(); });
+          row = el("div", { class: "row text" }, el("label", { for: id }, spec.label), input);
+        }
+        panel.append(row);
+        if (spec.help) panel.append(el("p", { class: "hint", id: helpId }, spec.help));
       }
       return panel;
     }
@@ -470,21 +643,118 @@
       else if (e.key === "Escape") { selectedId = null; render(); focusNode(step.id); }
     }
 
+    // Markdown to safe HTML. DOMPurify strips scripts, event handlers and javascript: links.
+    function renderMarkdown(md) {
+      if (!window.marked || !window.DOMPurify) {
+        const pre = el("pre");
+        pre.textContent = md;
+        return pre.outerHTML;
+      }
+      const html = marked.parse(md, { gfm: true, breaks: true, async: false });
+      return DOMPurify.sanitize(html, { USE_PROFILES: { html: true }, FORBID_TAGS: ["style", "form", "iframe"], FORBID_ATTR: ["style"] });
+    }
+    if (window.DOMPurify) {
+      DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+        if (node.tagName === "A") { node.setAttribute("target", "_blank"); node.setAttribute("rel", "noopener noreferrer"); }
+      });
+    }
+
+    const MAX_IMAGE_BYTES = 280 * 1024;
+    // Shrinks a pasted or dropped image and returns it as a data URL small enough to store in the note.
+    async function imageToDataUrl(file) {
+      if (!/^image\/(png|jpe?g|gif|webp)$/.test(file.type)) throw new Error("Only PNG, JPEG, GIF and WebP images can be pasted.");
+      if (file.type === "image/gif" && file.size <= MAX_IMAGE_BYTES) return readAsDataUrl(file); // keep animation
+      const bitmap = await createImageBitmap(file);
+      const scale = Math.min(1, 1000 / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(bitmap.width * scale);
+      canvas.height = Math.round(bitmap.height * scale);
+      canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      for (const q of [0.85, 0.7, 0.55]) {
+        const url = canvas.toDataURL("image/webp", q);
+        const type = url.startsWith("data:image/webp") ? url : canvas.toDataURL("image/jpeg", q);
+        if (type.length * 0.75 <= MAX_IMAGE_BYTES) return type;
+      }
+      throw new Error("That image is too large even after shrinking. Link to it with ![alt](https://…) instead.");
+    }
+    function readAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = () => reject(new Error("Could not read the image."));
+        r.readAsDataURL(file);
+      });
+    }
+
     function renderNotes() {
       const layer = $("notes");
       layer.replaceChildren();
-      for (const note of doc.notes) {
-        const textarea = el("textarea", { "aria-label": "Note text", placeholder: "Write a note…", maxlength: "2000" });
-        textarea.value = note.text;
-        textarea.addEventListener("input", () => { note.text = textarea.value; changed({ rerender: false }); });
-        const grip = el("div", { class: "grip" }, el("span", {}, "Note"),
+      for (const note of doc.notes) layer.append(noteCard(note));
+    }
+
+    function noteCard(note) {
+      const editing = editingNoteId === note.id;
+      const card = el("div", { class: "note", "data-note": note.id, style: `left:${note.x}px;top:${note.y}px` });
+      const setEditing = (on) => {
+        editingNoteId = on ? note.id : (editingNoteId === note.id ? null : editingNoteId);
+        const fresh = noteCard(note);
+        card.replaceWith(fresh);
+        requestAnimationFrame(() => (on ? fresh.querySelector("textarea") : fresh.querySelector(".acts button"))?.focus());
+      };
+
+      const grip = el("div", { class: "grip" }, el("span", {}, editing ? "Note · Markdown" : "Note"),
+        el("span", { class: "acts" },
+          el("button", { type: "button", "aria-pressed": String(editing), onclick: () => setEditing(!editing) }, editing ? "Done" : "Edit"),
           el("button", { type: "button", "aria-label": "Delete note", title: "Delete note", onclick: () => {
-            doc.notes = doc.notes.filter((n) => n !== note); changed();
-          } }, "✕"));
-        const card = el("div", { class: "note", "data-note": note.id, style: `left:${note.x}px;top:${note.y}px` }, grip, textarea);
-        grip.addEventListener("pointerdown", (e) => startNoteDrag(e, note, card));
-        layer.append(card);
+            doc.notes = doc.notes.filter((n) => n !== note);
+            if (editingNoteId === note.id) editingNoteId = null;
+            changed();
+          } }, "✕")));
+      grip.addEventListener("pointerdown", (e) => startNoteDrag(e, note, card));
+      card.append(grip);
+
+      if (!editing) {
+        const md = el("div", { class: "md", tabindex: "0", "aria-label": "Note. Press Enter to edit." });
+        md.innerHTML = renderMarkdown(note.text); // sanitized above
+        md.addEventListener("dblclick", (e) => { if (!e.target.closest("a")) setEditing(true); });
+        md.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target === md) { e.preventDefault(); setEditing(true); } });
+        card.append(md);
+        return card;
       }
+
+      const textarea = el("textarea", { "aria-label": "Note text in Markdown", placeholder: "# Title\n**bold**, _italic_, [link](https://…), ![image](https://…)\nPaste or drop an image to embed it." });
+      textarea.value = note.text;
+      textarea.addEventListener("input", () => { note.text = textarea.value; changed({ rerender: false }); });
+      textarea.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" || ((e.metaKey || e.ctrlKey) && e.key === "Enter")) { e.preventDefault(); setEditing(false); }
+      });
+      const errorBox = el("div", { class: "note-error", role: "alert", hidden: true });
+      const insertImage = async (file) => {
+        errorBox.hidden = true;
+        try {
+          const url = await imageToDataUrl(file);
+          const name = (file.name || "image").replace(/[\[\]]/g, "");
+          const snippet = `![${name}](${url})`;
+          const at = textarea.selectionStart ?? textarea.value.length;
+          textarea.setRangeText(snippet, at, textarea.selectionEnd ?? at, "end");
+          note.text = textarea.value;
+          changed({ rerender: false });
+        } catch (err) {
+          errorBox.textContent = err.message;
+          errorBox.hidden = false;
+        }
+      };
+      textarea.addEventListener("paste", (e) => {
+        const file = [...(e.clipboardData?.files || [])].find((f) => f.type.startsWith("image/"));
+        if (file) { e.preventDefault(); insertImage(file); }
+      });
+      textarea.addEventListener("dragover", (e) => { if ([...e.dataTransfer.types].includes("Files")) { e.preventDefault(); e.stopPropagation(); } });
+      textarea.addEventListener("drop", (e) => {
+        const file = [...(e.dataTransfer?.files || [])].find((f) => f.type.startsWith("image/"));
+        if (file) { e.preventDefault(); e.stopPropagation(); insertImage(file); }
+      });
+      card.append(textarea, errorBox, el("div", { class: "tip" }, "Markdown. Paste or drop images. Esc to finish."));
+      return card;
     }
 
     function startNoteDrag(e, note, card) {
@@ -614,6 +884,7 @@
       render();
       setSaveState("Saved");
       $("flow-picker").value = id;
+      loadSite().catch(() => {});
     }
 
     $("flow-picker").addEventListener("change", (e) => openFlow(e.target.value));
@@ -626,7 +897,8 @@
       $("flow-name").select();
     });
     $("delete-flow").addEventListener("click", async () => {
-      if (!confirm(`Delete "${doc.name}"? This cannot be undone.`)) return;
+      const extra = site ? ` Its published site at ${site.url} is taken down too.` : "";
+      if (!confirm(`Delete "${doc.name}"? This cannot be undone.${extra}`)) return;
       clearTimeout(saveTimer); saveTimer = null;
       await api("DELETE", `/api/builder/flows/${doc.id}`);
       doc = null;
@@ -646,10 +918,142 @@
     });
 
     document.addEventListener("keydown", (e) => {
-      const typing = e.target.closest("input, textarea, select, [contenteditable]");
+      const typing = e.target.closest("input, textarea, select, [contenteditable], dialog");
       if (!typing && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === "n" || e.key === "N")) { e.preventDefault(); addNote(); }
     });
     window.addEventListener("beforeunload", (e) => { if (saveTimer) { save().catch(() => {}); e.preventDefault(); } });
+
+    /* ---------- publishing ---------- */
+
+    let site = null;
+    const pubDialog = $("publish-dialog");
+
+    async function loadSite() {
+      const data = await api("GET", `/api/builder/flows/${doc.id}/site`);
+      site = data.site;
+      $("publish").classList.toggle("live", !!site);
+      $("publish").textContent = site ? "Published" : "Publish";
+      return data;
+    }
+
+    function showPubError(message, list) {
+      const box = $("pub-error");
+      box.replaceChildren(el("span", {}, message));
+      if (list && list.length) box.append(el("ul", {}, ...list.map((p) => el("li", {}, p.message))));
+      box.hidden = false;
+    }
+
+    function renderLive() {
+      const box = $("pub-live");
+      if (!site) { box.hidden = true; return; }
+      box.replaceChildren(...[
+        el("span", {}, "Live at ", el("a", { href: site.url, target: "_blank", rel: "noopener" }, site.url)),
+        el("span", { class: "sub" }, `Published ${new Date(site.publishedAt).toLocaleString()}`),
+        site.outdated ? el("span", { class: "stale" }, "The flow changed since this was published. Press Update site to use the new version.") : null,
+      ].filter(Boolean));
+      box.hidden = false;
+    }
+
+    async function openPublish() {
+      await flushSave().catch(() => {});
+      $("pub-error").hidden = true;
+      $("pub-origin").textContent = `${location.origin}/s/`;
+      let data;
+      try { data = await loadSite(); }
+      catch (err) { alert(err.message); return; }
+      $("pub-title-input").value = site ? site.title : doc.name;
+      $("pub-slug").value = site ? site.slug : data.suggestedSlug;
+      $("pub-public").value = site ? site.publicMd : `# ${doc.name}\n\nSign in to see the members page.`;
+      $("pub-members").value = site ? site.membersMd : "# Welcome\n\nThis page is only visible to signed-in users.";
+      $("pub-unpublish").hidden = !site;
+      $("pub-submit").textContent = site ? "Update site" : "Publish";
+      for (const f of pubDialog.querySelectorAll(".md-field")) setTab(f, "write");
+      renderLive();
+      const errors = problems.filter((p) => p.level === "error");
+      if (errors.length) showPubError("Fix these on the whiteboard before publishing:", errors);
+      $("pub-submit").disabled = errors.length > 0;
+      pubDialog.showModal();
+      $("pub-title-input").focus();
+    }
+
+    function setTab(field, tab) {
+      const textarea = field.querySelector("textarea");
+      const preview = field.querySelector(".preview");
+      for (const b of field.querySelectorAll(".tabs button")) b.setAttribute("aria-selected", String(b.dataset.tab === tab));
+      if (tab === "preview") preview.innerHTML = renderMarkdown(textarea.value); // sanitized
+      textarea.hidden = tab === "preview";
+      preview.hidden = tab !== "preview";
+    }
+
+    for (const field of pubDialog.querySelectorAll(".md-field")) {
+      for (const b of field.querySelectorAll(".tabs button")) b.addEventListener("click", () => setTab(field, b.dataset.tab));
+      const textarea = field.querySelector("textarea");
+      const add = async (file) => {
+        try {
+          const url = await imageToDataUrl(file);
+          const at = textarea.selectionStart ?? textarea.value.length;
+          textarea.setRangeText(`![${(file.name || "image").replace(/[\[\]]/g, "")}](${url})`, at, textarea.selectionEnd ?? at, "end");
+        } catch (err) { showPubError(err.message); }
+      };
+      textarea.addEventListener("paste", (e) => {
+        const file = [...(e.clipboardData?.files || [])].find((f) => f.type.startsWith("image/"));
+        if (file) { e.preventDefault(); add(file); }
+      });
+      textarea.addEventListener("dragover", (e) => { if ([...e.dataTransfer.types].includes("Files")) e.preventDefault(); });
+      textarea.addEventListener("drop", (e) => {
+        const file = [...(e.dataTransfer?.files || [])].find((f) => f.type.startsWith("image/"));
+        if (file) { e.preventDefault(); add(file); }
+      });
+    }
+
+    $("pub-slug").addEventListener("input", (e) => {
+      const clean = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-{2,}/g, "-");
+      if (clean !== e.target.value) e.target.value = clean;
+    });
+
+    $("pub-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      $("pub-error").hidden = true;
+      const button = $("pub-submit");
+      button.disabled = true;
+      const before = button.textContent;
+      button.textContent = "Publishing…";
+      try {
+        await flushSave();
+        const data = await api("PUT", `/api/builder/flows/${doc.id}/site`, {
+          title: $("pub-title-input").value,
+          slug: $("pub-slug").value.replace(/^-+|-+$/g, ""),
+          publicMd: $("pub-public").value,
+          membersMd: $("pub-members").value,
+        });
+        site = data.site;
+        $("publish").classList.add("live");
+        $("publish").textContent = "Published";
+        $("pub-unpublish").hidden = false;
+        $("pub-slug").value = site.slug;
+        renderLive();
+        before === "Publish" && $("pub-live").querySelector("a")?.focus();
+        button.textContent = "Update site";
+      } catch (err) {
+        showPubError(err.message, err.problems);
+        button.textContent = before;
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    $("pub-unpublish").addEventListener("click", async () => {
+      if (!confirm(`Unpublish ${site.url}? The address stops working for everyone. Accounts are kept.`)) return;
+      try {
+        await api("DELETE", `/api/builder/flows/${doc.id}/site`);
+        site = null;
+        $("publish").classList.remove("live");
+        $("publish").textContent = "Publish";
+        pubDialog.close();
+      } catch (err) { showPubError(err.message); }
+    });
+    $("pub-cancel").addEventListener("click", () => pubDialog.close());
+    $("publish").addEventListener("click", openPublish);
 
     /* ---------- boot ---------- */
 
@@ -657,6 +1061,7 @@
       try {
         const m = await api("GET", "/api/builder/meta");
         for (const t of m.types) meta[t.type] = t;
+        starterMeta = m.starter;
         renderTiles();
         const flows = await refreshPicker();
         const wanted = new URLSearchParams(location.search).get("flow");

@@ -7,103 +7,165 @@ import {
   checkDoc,
   compileDoc,
   createLoginFlow,
+  FileUserDirectory,
   FlowDocStore,
   FlowEngine,
   FlowError,
   hashPassword,
-  InMemoryUserDirectory,
+  label,
   newDoc,
+  newStarter,
+  newStep,
+  parseCookies,
+  RateLimiter,
+  renderSitePages,
   sanitizeDoc,
-  STEP_CONFIG,
+  SessionSigner,
+  SiteStore,
+  SLUG_RE,
+  STARTER_SETTINGS,
+  STEP_SETTINGS,
   STEP_TYPES,
   verifyPassword,
 } from "../index.js";
-import type { BuilderDoc } from "../index.js";
-import { label } from "../builder/document.js";
+import type { BuilderDoc, FlowStep, SiteRecord } from "../index.js";
 
 /*
  * Demo server. Run `npm run demo`, then open:
  *   http://localhost:3000/          the whiteboard (flow builder)
  *   http://localhost:3000/run?flow= run a whiteboard flow
  *   http://localhost:3000/login     the hand-written login flow
+ *   http://localhost:3000/s/<slug>/ a published site
  *
- * Demo accounts:
- *   ada@example.com   / correct horse   (no MFA)
- *   grace@example.com / battery staple  (MFA in the hand-written flow)
  * Email codes are printed to this console.
  */
 
 const PORT = Number(process.env.PORT ?? 3000);
 // Local only by default: the builder API has no login of its own.
 const HOST = process.env.HOST ?? "127.0.0.1";
-const ORIGIN = process.env.ORIGIN ?? `http://localhost:${PORT}`;
+const ORIGIN = (process.env.ORIGIN ?? `http://localhost:${PORT}`).replace(/\/$/, "");
 const RP_ID = process.env.RP_ID ?? new URL(ORIGIN).hostname;
-const MAX_BODY = 64 * 1024;
+const SECURE_COOKIES = ORIGIN.startsWith("https://");
+const MAX_JSON = 16 * 1024;
+const MAX_BUILDER_JSON = 4 * 1024 * 1024;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const publicDir = join(root, "src", "demo", "public");
-const dataFile = process.env.FLOWS_FILE ?? join(root, "data", "flows.json");
-const webauthnBrowser = join(root, "node_modules", "@simplewebauthn", "browser", "dist", "bundle", "index.umd.min.js");
+const dataDir = process.env.DATA_DIR ?? join(root, "data");
+const modules = join(root, "node_modules");
 
-const users = new InMemoryUserDirectory()
-  .add({ id: "u1", email: "ada@example.com", passwordHash: await hashPassword("correct horse"), mfaEnabled: false })
-  .add({ id: "u2", email: "grace@example.com", passwordHash: await hashPassword("battery staple"), mfaEnabled: true });
+const STATIC: Record<string, { file: string; type: string }> = {
+  "/assets/flow-client.js": { file: join(publicDir, "flow-client.js"), type: "text/javascript; charset=utf-8" },
+  "/assets/flow-client.css": { file: join(publicDir, "flow-client.css"), type: "text/css; charset=utf-8" },
+  "/vendor/webauthn.js": { file: join(modules, "@simplewebauthn", "browser", "dist", "bundle", "index.umd.min.js"), type: "text/javascript; charset=utf-8" },
+  "/vendor/marked.js": { file: join(modules, "marked", "lib", "marked.umd.js"), type: "text/javascript; charset=utf-8" },
+  "/vendor/purify.js": { file: join(modules, "dompurify", "dist", "purify.min.js"), type: "text/javascript; charset=utf-8" },
+};
 
-const sendCode = async (user: { email: string }, code: string) => console.log(`[demo mail] code for ${user.email}: ${code}`);
+/* ---------- state ---------- */
+
+const users = new FileUserDirectory(join(dataDir, "users.json"));
+await users.load();
+if (users.all().length === 0 && process.env.SEED_DEMO_USERS !== "false") {
+  // Known passwords: fine on localhost, never on a public server. Set SEED_DEMO_USERS=false there.
+  users.add({ id: "u1", email: "ada@example.com", passwordHash: await hashPassword("correct horse"), mfaEnabled: false });
+  users.add({ id: "u2", email: "grace@example.com", passwordHash: await hashPassword("battery staple"), mfaEnabled: true });
+  await users.save();
+}
+
+const sendCode = async (to: { email: string }, code: string) => console.log(`[demo mail] code for ${to.email}: ${code}`);
 const dummyPasswordHash = await hashPassword("not-a-real-password");
 
 const engine = new FlowEngine().register(createLoginFlow({ users, verifyPassword, dummyPasswordHash, sendCode }));
-const builderDeps = { users, verifyPassword, dummyPasswordHash, sendCode, webauthn: { rpID: RP_ID, rpName: "Auth Flow Demo", origin: ORIGIN } };
+const builderDeps = {
+  users,
+  verifyPassword,
+  hashPassword,
+  dummyPasswordHash,
+  sendCode,
+  webauthn: { rpID: RP_ID, rpName: "Auth Flow", origin: ORIGIN },
+};
 
-const docs = new FlowDocStore(dataFile);
+const docs = new FlowDocStore(process.env.FLOWS_FILE ?? join(dataDir, "flows.json"));
 await docs.load();
 if (docs.list().length === 0) await seed();
 
+const sites = new SiteStore(join(dataDir, "sites"));
+await sites.load();
+// Regenerate pages so template changes reach sites published by an older version.
+for (const site of sites.list()) await sites.put(site, renderSitePages(site));
+const signer = await SessionSigner.fromFile(join(dataDir, "session-secret"));
+
+const flowLimiter = new RateLimiter(60, 60_000);
+
 async function seed(): Promise<void> {
-  const enroll: BuilderDoc = {
+  await docs.put({
     ...newDoc("Password, then add a passkey"),
-    starter: { identifier: "email" },
-    steps: [
-      { id: "pw", type: "password", config: { maxAttempts: 5 } },
-      { id: "pk", type: "passkey", config: {} },
-      { id: "auth", type: "authenticate", config: {} },
-    ],
-    notes: [{ id: "n1", text: "Run this first. It signs you in with a password and creates a passkey.", x: 24, y: 24 }],
-  };
-  const mockup: BuilderDoc = {
+    starter: newStarter(),
+    steps: [newStep("pw", "password"), newStep("pk", "passkey"), newStep("auth", "authenticate")],
+    notes: [{ id: "n1", text: "**Run this first.** It signs you in with a password and creates a passkey.", x: 24, y: 24 }],
+  });
+  await docs.put({
     ...newDoc("Sign in with a passkey"),
-    starter: { identifier: "email" },
-    steps: [
-      { id: "age", type: "age-check", config: { minAge: 18 } },
-      { id: "pk", type: "passkey", config: {} },
-      { id: "auth", type: "authenticate", config: {} },
-    ],
-    notes: [],
+    starter: newStarter(),
+    steps: [newStep("age", "age-check"), newStep("pk", "passkey"), newStep("auth", "authenticate")],
     updatedAt: Date.now() + 1,
-  };
-  await docs.put(enroll);
-  await docs.put(mockup);
+  });
 }
+
+/** Compiles a flow document into the engine once per version. */
+function ensureFlow(doc: BuilderDoc, flowId: string): { ok: true } | { ok: false; problems: ReturnType<typeof checkDoc> } {
+  if (engine.has(flowId)) return { ok: true };
+  const compiled = compileDoc(doc, builderDeps, flowId);
+  if (!compiled.ok) return { ok: false, problems: compiled.problems };
+  engine.register(compiled.flow);
+  return { ok: true };
+}
+
+const siteFlowId = (site: SiteRecord) => `site:${site.slug}:${site.publishedAt}`;
+const cookieName = "fs_session";
 
 /* ---------- http helpers ---------- */
 
-function send(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+class HttpError extends Error {
+  constructor(public readonly status: number, message: string, public readonly extra: Record<string, unknown> = {}) {
+    super(message);
+  }
+}
+
+const SECURITY_HEADERS = {
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "same-origin",
+  "x-frame-options": "DENY",
+};
+
+const PAGE_CSP =
+  "default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; " +
+  "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'";
+
+function send(res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
+  res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...SECURITY_HEADERS, ...headers });
   res.end(JSON.stringify(body));
 }
 
-async function sendFile(res: ServerResponse, path: string, type: string): Promise<void> {
+async function sendFile(res: ServerResponse, path: string, type: string, cache = "no-cache"): Promise<void> {
   const body = await readFile(path);
-  res.writeHead(200, { "content-type": type, "cache-control": "no-cache" });
+  const isHtml = type.startsWith("text/html");
+  res.writeHead(200, { "content-type": type, "cache-control": cache, ...SECURITY_HEADERS, ...(isHtml && { "content-security-policy": PAGE_CSP }) });
   res.end(body);
 }
 
-async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+function redirect(res: ServerResponse, to: string, status = 302): void {
+  res.writeHead(status, { location: to, "cache-control": "no-store", ...SECURITY_HEADERS });
+  res.end();
+}
+
+async function readJson(req: IncomingMessage, limit = MAX_JSON): Promise<Record<string, unknown>> {
   let size = 0;
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
-    if (size > MAX_BODY) throw new BadRequest("Request body too large.");
+    if (size > limit) throw new HttpError(413, "Request body too large.");
     chunks.push(chunk as Buffer);
   }
   const text = Buffer.concat(chunks).toString("utf8");
@@ -111,42 +173,177 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
   try {
     parsed = text ? JSON.parse(text) : {};
   } catch {
-    throw new BadRequest("Invalid JSON.");
+    throw new HttpError(400, "Invalid JSON.");
   }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new BadRequest("Expected a JSON object.");
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new HttpError(400, "Expected a JSON object.");
   return parsed as Record<string, unknown>;
 }
 
-class BadRequest extends Error {}
-
-/** Rejects cross-site writes: the builder API has no login, so only same-origin pages may change it. */
+/** Rejects cross-site writes. Browsers always send Origin on cross-site POSTs, and the JSON content type forces a preflight. */
 function assertSameOrigin(req: IncomingMessage): void {
   const origin = req.headers.origin;
-  if (origin && origin !== ORIGIN) throw new BadRequest("Cross-origin request refused.");
-  if (!String(req.headers["content-type"] ?? "").startsWith("application/json")) throw new BadRequest("Expected application/json.");
+  if (origin && origin !== ORIGIN) throw new HttpError(403, "Cross-origin request refused.");
+  if (!String(req.headers["content-type"] ?? "").startsWith("application/json")) throw new HttpError(415, "Expected application/json.");
+}
+
+function clientIp(req: IncomingMessage): string {
+  return req.socket.remoteAddress ?? "unknown";
+}
+
+function limit(req: IncomingMessage, key: string): void {
+  if (!flowLimiter.take(`${clientIp(req)}|${key}`)) throw new HttpError(429, "Too many attempts. Wait a minute and try again.");
+}
+
+function inputOf(body: Record<string, unknown>): Record<string, unknown> {
+  return typeof body.input === "object" && body.input !== null && !Array.isArray(body.input) ? (body.input as Record<string, unknown>) : {};
 }
 
 function docResponse(doc: BuilderDoc) {
   return { doc, problems: checkDoc(doc) };
 }
 
+function siteResponse(site: SiteRecord | undefined, doc: BuilderDoc) {
+  if (!site) return { site: null, suggestedSlug: slugify(doc.name) };
+  return {
+    site: {
+      slug: site.slug,
+      title: site.title,
+      publicMd: site.publicMd,
+      membersMd: site.membersMd,
+      publishedAt: site.publishedAt,
+      url: `${ORIGIN}/s/${site.slug}/`,
+      outdated: doc.updatedAt > site.flow.updatedAt,
+    },
+  };
+}
+
+function slugify(name: string): string {
+  const s = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "");
+  return SLUG_RE.test(s) ? s : "my-site";
+}
+
+/* ---------- builder: publishing ---------- */
+
+async function publish(doc: BuilderDoc, body: Record<string, unknown>): Promise<SiteRecord> {
+  const slug = typeof body.slug === "string" ? body.slug.trim().toLowerCase() : "";
+  if (!SLUG_RE.test(slug)) throw new HttpError(400, "The address can use lowercase letters, numbers and dashes (2 to 40 characters).");
+  const taken = sites.get(slug);
+  if (taken && taken.flowDocId !== doc.id) throw new HttpError(409, `/s/${slug}/ is already used by another flow.`);
+
+  const title = typeof body.title === "string" && body.title.trim() ? body.title.trim().slice(0, 80) : doc.name;
+  const md = (v: unknown, name: string) => {
+    const text = typeof v === "string" ? v : "";
+    if (text.length > 1_000_000) throw new HttpError(413, `${name} is too large. Use image links instead of pasting large images.`);
+    return text;
+  };
+
+  const site: SiteRecord = {
+    slug,
+    flowDocId: doc.id,
+    title,
+    publicMd: md(body.publicMd, "The public page"),
+    membersMd: md(body.membersMd, "The members page"),
+    flow: structuredClone(doc),
+    publishedAt: Date.now(),
+  };
+  const ready = ensureFlow(site.flow, siteFlowId(site));
+  if (!ready.ok) throw new HttpError(422, "Fix the errors on the whiteboard before publishing.", { problems: ready.problems });
+
+  const previous = sites.forFlow(doc.id);
+  await sites.put(site, renderSitePages(site));
+  if (previous && previous.slug !== slug) await sites.delete(previous.slug);
+  return site;
+}
+
+/* ---------- published sites ---------- */
+
+async function handleSite(req: IncomingMessage, res: ServerResponse, slug: string, rest: string): Promise<void> {
+  const site = sites.get(slug);
+  if (!site) throw new HttpError(404, "This site does not exist or was unpublished.");
+  const session = signer.verify(parseCookies(req.headers.cookie)[cookieName], slug);
+  const user = session ? await users.findById(session.u) : undefined;
+
+  if (req.method === "GET" && rest === "/") return sendFile(res, sites.pagePath(slug, "index"), "text/html; charset=utf-8", "no-store");
+  if (req.method === "GET" && rest === "/members") {
+    if (!user) return redirect(res, `/s/${slug}/`);
+    return sendFile(res, sites.pagePath(slug, "members"), "text/html; charset=utf-8", "private, no-store");
+  }
+  if (req.method === "GET" && rest === "/api/me") {
+    return send(res, 200, user ? { signedIn: true, email: user.email } : { signedIn: false });
+  }
+
+  if (req.method !== "POST") throw new HttpError(404, "Not found.");
+  assertSameOrigin(req);
+  const flowId = siteFlowId(site);
+
+  if (rest === "/api/start") {
+    limit(req, `site:${slug}`);
+    const ready = ensureFlow(site.flow, flowId);
+    if (!ready.ok) throw new HttpError(500, "This site's sign-in is misconfigured.");
+    return send(res, 200, (await engine.start(flowId)).view);
+  }
+
+  const submit = rest.match(/^\/api\/submit\/([\w-]{1,64})$/);
+  if (submit) {
+    limit(req, `site:${slug}`);
+    const sessionId = submit[1]!;
+    const body = await readJson(req);
+    // Only sessions started for this site can sign in to this site.
+    if ((await engine.sessionFlowId(sessionId)) !== flowId) throw new HttpError(410, "Your sign-in session expired.");
+    const step = await engine.submit(sessionId, String(body.nodeId ?? ""), inputOf(body));
+    if (step.view.type === "complete" && step.view.status === "success" && step.result?.userId) {
+      const hours = Number(step.result.sessionHours ?? 24);
+      const token = signer.sign({ u: String(step.result.userId), s: slug, exp: Date.now() + hours * 3_600_000 });
+      const cookie = [
+        `${cookieName}=${encodeURIComponent(token)}`,
+        `Path=/s/${slug}/`,
+        `Max-Age=${Math.round(hours * 3600)}`,
+        "HttpOnly",
+        "SameSite=Lax",
+        ...(SECURE_COOKIES ? ["Secure"] : []),
+      ].join("; ");
+      return send(res, 200, { ...step.view, redirect: `/s/${slug}/members` }, { "set-cookie": cookie });
+    }
+    return send(res, 200, step.view);
+  }
+
+  if (rest === "/api/logout") {
+    const clear = `${cookieName}=; Path=/s/${slug}/; Max-Age=0; HttpOnly; SameSite=Lax${SECURE_COOKIES ? "; Secure" : ""}`;
+    return send(res, 200, { ok: true }, { "set-cookie": clear });
+  }
+
+  throw new HttpError(404, "Not found.");
+}
+
 /* ---------- routes ---------- */
 
 const server = createServer(async (req, res) => {
+  // HEAD is answered like GET; Node drops the body for HEAD responses.
+  if (req.method === "HEAD") req.method = "GET";
   const url = new URL(req.url ?? "/", "http://localhost");
   const path = url.pathname;
   try {
+    const siteMatch = path.match(/^\/s\/([a-z0-9-]{1,40})(\/.*)?$/);
+    if (siteMatch) {
+      if (!siteMatch[2]) return redirect(res, `/s/${siteMatch[1]}/`, 301);
+      return await handleSite(req, res, siteMatch[1]!, siteMatch[2]);
+    }
+
     if (req.method === "GET") {
       if (path === "/") return await sendFile(res, join(publicDir, "builder.html"), "text/html; charset=utf-8");
       if (path === "/run" || path === "/login") return await sendFile(res, join(publicDir, "index.html"), "text/html; charset=utf-8");
-      if (path === "/vendor/webauthn.js") return await sendFile(res, webauthnBrowser, "text/javascript; charset=utf-8");
+      const asset = STATIC[path];
+      if (asset) return await sendFile(res, asset.file, asset.type);
     }
 
     if (path.startsWith("/api/") && req.method !== "GET") assertSameOrigin(req);
 
     /* builder */
     if (path === "/api/builder/meta" && req.method === "GET") {
-      return send(res, 200, { types: STEP_TYPES.map((type) => ({ type, label: label(type), config: STEP_CONFIG[type] })) });
+      return send(res, 200, {
+        starter: { label: "Starter Node", settings: STARTER_SETTINGS },
+        types: STEP_TYPES.map((type) => ({ type, label: label(type), settings: STEP_SETTINGS[type] })),
+      });
     }
     if (path === "/api/builder/flows" && req.method === "GET") {
       return send(res, 200, { flows: docs.list().map((d) => ({ id: d.id, name: d.name, updatedAt: d.updatedAt })) });
@@ -158,55 +355,68 @@ const server = createServer(async (req, res) => {
       return send(res, 201, docResponse(doc));
     }
 
-    const flowMatch = path.match(/^\/api\/builder\/flows\/([A-Za-z0-9_-]{1,64})(\/run)?$/);
+    const flowMatch = path.match(/^\/api\/builder\/flows\/([A-Za-z0-9_-]{1,64})(\/run|\/site)?$/);
     if (flowMatch) {
       const id = flowMatch[1]!;
       const existing = docs.get(id);
-      if (!existing) return send(res, 404, { error: "Flow not found." });
+      if (!existing) throw new HttpError(404, "Flow not found.");
+      const sub = flowMatch[2];
 
-      if (!flowMatch[2]) {
+      if (!sub) {
         if (req.method === "GET") return send(res, 200, docResponse(existing));
         if (req.method === "PUT") {
-          const doc = sanitizeDoc(await readJson(req), id);
+          const doc = sanitizeDoc(await readJson(req, MAX_BUILDER_JSON), id);
           await docs.put(doc);
           return send(res, 200, docResponse(doc));
         }
         if (req.method === "DELETE") {
+          const site = sites.forFlow(id);
+          if (site) await sites.delete(site.slug);
           await docs.delete(id);
           return send(res, 200, { ok: true });
         }
-      } else if (req.method === "POST") {
-        // Each saved version compiles to its own engine flow, so edits never break a run that is in progress.
+      }
+
+      if (sub === "/run" && req.method === "POST") {
+        // Each saved version compiles to its own engine flow, so edits never break a run in progress.
         const flowId = `builder:${existing.id}:${existing.updatedAt}`;
-        if (!engine.has(flowId)) {
-          const compiled = compileDoc(existing, builderDeps, flowId);
-          if (!compiled.ok) return send(res, 422, { error: "This flow has errors. Fix them on the whiteboard first.", problems: compiled.problems });
-          engine.register(compiled.flow);
+        const ready = ensureFlow(existing, flowId);
+        if (!ready.ok) throw new HttpError(422, "This flow has errors. Fix them on the whiteboard first.", { problems: ready.problems });
+        return send(res, 200, (await engine.start(flowId)).view);
+      }
+
+      if (sub === "/site") {
+        if (req.method === "GET") return send(res, 200, siteResponse(sites.forFlow(id), existing));
+        if (req.method === "PUT") {
+          const site = await publish(existing, await readJson(req, MAX_BUILDER_JSON));
+          return send(res, 200, siteResponse(site, existing));
         }
-        const step = await engine.start(flowId);
-        return send(res, 200, step.view);
+        if (req.method === "DELETE") {
+          const site = sites.forFlow(id);
+          if (site) await sites.delete(site.slug);
+          return send(res, 200, siteResponse(undefined, existing));
+        }
       }
     }
 
-    /* runtime */
+    /* runtime for /run and /login */
     if (path === "/api/flows/login/start" && req.method === "POST") {
+      limit(req, "login");
       return send(res, 200, (await engine.start("login")).view);
     }
-    const submitMatch = path.match(/^\/api\/sessions\/([\w-]+)\/submit$/);
+    const submitMatch = path.match(/^\/api\/sessions\/([\w-]{1,64})\/submit$/);
     if (submitMatch && req.method === "POST") {
+      limit(req, "run");
       const body = await readJson(req);
-      const input = typeof body.input === "object" && body.input !== null ? (body.input as Record<string, unknown>) : {};
-      const step = await engine.submit(submitMatch[1]!, String(body.nodeId ?? ""), input);
-      if (step.view.type === "complete" && step.view.status === "success") {
-        // A real app would create a login session here (e.g. an HttpOnly cookie) from step.result.
-        console.log("[demo] signed in:", step.result);
-      }
+      const step: FlowStep = await engine.submit(submitMatch[1]!, String(body.nodeId ?? ""), inputOf(body));
+      if (step.view.type === "complete" && step.view.status === "success") console.log("[demo] signed in:", step.result);
       return send(res, 200, step.view);
     }
 
-    send(res, 404, { error: "Not found." });
+    throw new HttpError(404, "Not found.");
   } catch (err) {
-    if (err instanceof BadRequest || err instanceof BuilderInputError) return send(res, 400, { error: err.message });
+    if (err instanceof HttpError) return send(res, err.status, { error: err.message, ...err.extra });
+    if (err instanceof BuilderInputError) return send(res, 400, { error: err.message });
     if (err instanceof FlowError) {
       const status = err.code === "SESSION_NOT_FOUND" || err.code === "FLOW_COMPLETE" ? 410 : err.code === "UNKNOWN_FLOW" ? 404 : 500;
       if (status === 500) console.error(err);
@@ -220,6 +430,8 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`Whiteboard:  ${ORIGIN}/`);
   console.log(`Login demo:  ${ORIGIN}/login`);
-  console.log("Accounts: ada@example.com / correct horse, grace@example.com / battery staple");
-  if (RP_ID !== "localhost" && !ORIGIN.startsWith("https://")) console.warn("Passkeys need HTTPS unless you use localhost.");
+  if (users.all().some((u) => u.email.endsWith("@example.com"))) {
+    console.log("Demo accounts: ada@example.com / correct horse, grace@example.com / battery staple");
+  }
+  if (RP_ID !== "localhost" && !SECURE_COOKIES) console.warn("Passkeys and secure cookies need HTTPS unless you use localhost.");
 });

@@ -111,6 +111,11 @@ export class FlowEngine {
     });
   }
 
+  /** The flow a live session belongs to, or undefined if it is unknown or expired. */
+  async sessionFlowId(sessionId: string): Promise<string | undefined> {
+    return (await this.store.get(sessionId))?.flowId;
+  }
+
   /** Abandons a run. */
   async cancel(sessionId: string): Promise<void> {
     await this.store.delete(sessionId);

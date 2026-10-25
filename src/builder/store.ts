@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { BuilderDoc } from "./types.js";
+import { sanitizeDoc } from "./document.js";
 
 /**
  * Keeps whiteboard flows in memory and mirrors them to a JSON file,
@@ -16,7 +17,8 @@ export class FlowDocStore {
     if (!this.file) return;
     try {
       const parsed = JSON.parse(await readFile(this.file, "utf8")) as BuilderDoc[];
-      this.docs = new Map(parsed.map((d) => [d.id, d]));
+      // Re-run sanitizing so documents saved by older versions pick up new settings and defaults.
+      this.docs = new Map(parsed.map((d) => [d.id, { ...sanitizeDoc(d, d.id), updatedAt: d.updatedAt }]));
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
     }

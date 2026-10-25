@@ -8,7 +8,15 @@ export type { LoginFlowDeps, UserRecord, UserDirectory, CodeSender } from "./flo
 export { InMemoryUserDirectory, hashPassword, verifyPassword } from "./flows/users.js";
 export { compileDoc, ageOn } from "./builder/compile.js";
 export type { BuilderDeps, BuilderUserDirectory, CompileResult } from "./builder/compile.js";
-export { checkDoc, sanitizeDoc, newDoc, BuilderInputError } from "./builder/document.js";
+export { checkDoc, sanitizeDoc, newDoc, newStarter, newStep, label, BuilderInputError } from "./builder/document.js";
 export { FlowDocStore } from "./builder/store.js";
 export * from "./builder/types.js";
 export type { StoredPasskey } from "./flows/login.js";
+export { FileUserDirectory } from "./flows/file-users.js";
+export { renderMarkdown } from "./sites/markdown.js";
+export { SessionSigner, parseCookies } from "./sites/session-token.js";
+export type { SiteSession } from "./sites/session-token.js";
+export { SiteStore, SLUG_RE } from "./sites/site-store.js";
+export type { SiteRecord } from "./sites/site-store.js";
+export { renderSitePages } from "./sites/templates.js";
+export { RateLimiter } from "./sites/rate-limit.js";
