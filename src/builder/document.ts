@@ -76,7 +76,15 @@ export function shortId(): string {
 /**
  * Rules a flow must meet before it can run. Errors block running; warnings do not.
  */
-export function checkDoc(doc: BuilderDoc): Problem[] {
+export interface CheckOptions {
+  /** Email is switched on in Settings. When off, Verification Email nodes are an error. */
+  emailEnabled?: boolean;
+  /** Email is on but its settings have errors. Verification Email nodes are an error until fixed. */
+  emailReady?: boolean;
+}
+
+export function checkDoc(doc: BuilderDoc, opts: CheckOptions = {}): Problem[] {
+  const emailEnabled = opts.emailEnabled ?? true;
   const problems: Problem[] = [];
   const { steps } = doc;
 
@@ -100,6 +108,12 @@ export function checkDoc(doc: BuilderDoc): Problem[] {
   steps.forEach((step, i) => {
     const before = steps.slice(0, i);
     const c = step.config;
+
+    if (step.type === "email-code" && !emailEnabled) {
+      problems.push({ level: "error", stepId: step.id, message: "Email is turned off in Settings. Remove Verification Email or turn email on." });
+    } else if (step.type === "email-code" && opts.emailReady === false) {
+      problems.push({ level: "error", stepId: step.id, message: "Email settings have errors, so codes can't be sent. Fix them in Settings." });
+    }
 
     if (step.type === "authenticate" && !before.some((s) => FACTOR_STEPS.has(s.type))) {
       problems.push({
@@ -133,7 +147,9 @@ export function checkDoc(doc: BuilderDoc): Problem[] {
       problems.push({
         level: "warning",
         stepId: step.id,
-        message: "Anyone can create an account for an email they don't own. Put Verification Email before Enter Password to prove the email first.",
+        message: emailEnabled
+          ? "Anyone can create an account for an email they don't own. Put Verification Email before Enter Password to prove the email first."
+          : "Anyone can create an account for an email they don't own. Turn email on in Settings and put Verification Email before Enter Password.",
       });
     }
 

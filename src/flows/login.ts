@@ -46,6 +46,8 @@ export interface LoginFlowDeps {
   users: UserDirectory;
   sendCode: CodeSender;
   verifyPassword: (password: string, hash: string) => Promise<boolean>;
+  /** Testing mode: return false to turn an email away. */
+  isAllowed?: (email: string) => boolean;
   /** A valid hash of some throwaway password, checked when the email is unknown so response time does not reveal it. */
   dummyPasswordHash: string;
   codeTtlMs?: number;
@@ -90,6 +92,7 @@ export function createLoginFlow(deps: LoginFlowDeps): FlowDefinition {
         fields: [{ name: "email", label: "Email", type: "email", required: true, autocomplete: "username", maxLength: 254 }],
         // Always continue to the password screen, so this step does not reveal whether the account exists.
         handle: async ({ email }) => {
+          if (deps.isAllowed && !deps.isAllowed(email!)) return { outcome: "blocked" };
           const user = await deps.users.findByEmail(email!);
           return { outcome: "next", context: { email, userId: user?.id ?? null } };
         },
@@ -183,6 +186,13 @@ export function createLoginFlow(deps: LoginFlowDeps): FlowDefinition {
         result: (ctx) => ({ userId: ctx.userId, mfa: ctx.mfaVerified === true }),
       },
       {
+        id: "blocked",
+        kind: "terminal",
+        status: "failure",
+        title: "Invite only",
+        message: "This app is in testing. Only invited testers can sign in right now.",
+      },
+      {
         id: "locked",
         kind: "terminal",
         status: "failure",
@@ -198,7 +208,7 @@ export function createLoginFlow(deps: LoginFlowDeps): FlowDefinition {
       },
     ],
     transitions: {
-      identify: { next: "password" },
+      identify: { next: "password", blocked: "blocked" },
       password: { ok: "mfa-check", locked: "locked" },
       "mfa-check": { required: "send-code", skip: "success" },
       "send-code": { sent: "verify-code" },

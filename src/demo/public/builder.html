@@ -105,8 +105,9 @@
     .node.has-warning:not(.has-error) { border-color: var(--warning); }
     .node.dragging { opacity: .4; }
     .node svg.icon { width: 52px; height: 52px; flex: none; }
-    .node .name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .node .chip { font-size: .85rem; background: rgba(255,255,255,.14); padding: 2px 10px; border-radius: 999px; white-space: nowrap; }
+    .node .name { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* The chip gives up space before the node name does. */
+    .node .chip { flex: 0 6 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; margin-left: auto; font-size: .85rem; background: rgba(255,255,255,.14); padding: 2px 10px; border-radius: 999px; white-space: nowrap; }
     /* Controls float over the right edge so they take no space until shown. */
     .node .ctrl { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); display: flex; gap: 2px;
                   opacity: 0; pointer-events: none; transition: opacity .12s; }
@@ -177,6 +178,56 @@
     .problem button { all: unset; cursor: pointer; text-decoration: underline; }
     .ready { max-width: 660px; margin: 28px auto 0; color: var(--muted); text-align: center; font-size: .92rem; }
 
+    .head h1 .app-name { font-size: .95rem; font-weight: 600; color: var(--muted); letter-spacing: 0; margin-left: 4px; }
+    .head h1 .app-name:empty { display: none; }
+    .badge { font-size: .78rem; font-weight: 700; padding: 4px 10px; border-radius: 999px; }
+    .badge.testing { background: #ffe9a8; color: #6b4b00; }
+    .badge.warn { background: var(--error-bg); color: var(--error); cursor: pointer; border: 0; }
+
+    /* Settings Bar: a sheet on the right edge */
+    dialog.settings-bar { margin: 0 0 0 auto; height: 100vh; max-height: 100vh; width: min(480px, 100vw); max-width: 100vw;
+                          border: 0; padding: 0; background: var(--board); color: var(--text); box-shadow: -12px 0 40px rgba(0,0,0,.25); }
+    dialog.settings-bar::backdrop { background: rgba(10,12,16,.35); }
+    .sb { display: flex; flex-direction: column; height: 100%; }
+    .sb-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 10px; }
+    .sb-head h2 { margin: 0; font-size: 1.5rem; }
+    .sb-head button { border: 0; background: transparent; font-size: 1.2rem; cursor: pointer; color: var(--muted); padding: 4px 8px; border-radius: 6px; }
+    .sb-body { flex: 1; overflow-y: auto; padding: 0 20px 20px; display: grid; gap: 14px; align-content: start; }
+    .sb-note { font-size: .88rem; padding: 10px 12px; border-radius: 8px; background: var(--panel); }
+    .sb-note code { font-size: .85em; }
+    .sb-note.warn { background: var(--warning-bg); color: var(--warning); }
+    .sb-note.error { background: var(--error-bg); color: var(--error); }
+    .sb fieldset { border: 1px solid var(--arrow); border-radius: 10px; padding: 12px 14px 14px; margin: 0; display: grid; gap: 14px; }
+    .sb legend { font-weight: 700; padding: 0 6px; font-size: .95rem; }
+    .sb .fld { display: grid; gap: 5px; }
+    .sb .fld[hidden] { display: none; }
+    .sb .fld-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .sb .fld label { font-weight: 600; font-size: .9rem; }
+    .sb .fld code.env { font-size: .72rem; color: var(--muted); background: var(--panel); padding: 1px 6px; border-radius: 4px; overflow-wrap: anywhere; }
+    .sb .fld .req { color: var(--error); margin-left: 2px; }
+    .sb .fld input[type=text], .sb .fld input[type=password], .sb .fld input[type=number], .sb .fld select, .sb .fld textarea {
+      width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--arrow); background: var(--board); color: var(--text); font: inherit; font-size: .92rem; }
+    .sb .fld textarea { min-height: 84px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; }
+    .sb .fld input:disabled, .sb .fld select:disabled, .sb .fld textarea:disabled { opacity: .75; cursor: not-allowed; }
+    .sb .fld .toggle { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: .9rem; }
+    .sb .fld .toggle input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+    .sb .fld .help { margin: 0; color: var(--muted); font-size: .82rem; }
+    .sb .fld .err { margin: 0; color: var(--error); font-size: .84rem; }
+    .sb .fld .wrn { margin: 0; color: var(--warning); font-size: .84rem; }
+    .sb .fld.has-error input, .sb .fld.has-error select, .sb .fld.has-error textarea { border-color: var(--error); }
+    .sb .secret { display: flex; gap: 6px; }
+    .sb .secret input { flex: 1; min-width: 0; }
+    .sb .secret button { flex: none; }
+    .sb-foot { border-top: 1px solid var(--arrow); padding: 12px 20px 16px; display: grid; gap: 10px; background: var(--board); }
+    .sb-foot .test { display: flex; gap: 8px; }
+    .sb-foot .test input { flex: 1; min-width: 0; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--arrow); background: var(--board); color: var(--text); }
+    .sb-foot .row { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+    .sb-foot .row .status { margin-right: auto; font-size: .85rem; color: var(--muted); }
+    .sb-foot .row .status.bad { color: var(--error); }
+    .sb-foot .result { font-size: .85rem; margin: 0; overflow-wrap: anywhere; }
+    .sb-foot .result.ok { color: var(--ok, #1a7f37); }
+    .sb-foot .result.bad { color: var(--error); }
+
     /* Publish dialog */
     dialog.pub { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 32px); border: 0; border-radius: 12px; padding: 0;
                  background: var(--board); color: var(--text); box-shadow: 0 20px 60px rgba(0,0,0,.3); }
@@ -242,9 +293,12 @@
 <body>
   <div class="app">
     <header class="head">
-      <h1>Whiteboard</h1>
+      <h1>Whiteboard <span class="app-name" id="app-name"></span></h1>
       <button class="btn" id="add-note" type="button" aria-keyshortcuts="N">Add a note [N]</button>
       <button class="btn small" id="publish" type="button" aria-haspopup="dialog">Publish</button>
+      <button class="btn small" id="open-settings" type="button" aria-haspopup="dialog">Settings</button>
+      <span class="badge testing" id="testing-badge" hidden title="Only listed testers can sign in">Testing mode</span>
+      <button class="badge warn" id="settings-badge" type="button" hidden></button>
       <div class="flowbar">
         <label class="sr-only" for="flow-picker">Open flow</label>
         <select id="flow-picker"></select>
@@ -307,6 +361,34 @@
     </form>
   </dialog>
 
+  <dialog class="settings-bar" id="settings-bar" aria-labelledby="sb-title">
+    <div class="sb">
+      <div class="sb-head">
+        <h2 id="sb-title">Settings</h2>
+        <button type="button" id="sb-close" aria-label="Close settings">✕</button>
+      </div>
+      <form class="sb-body" id="sb-form" novalidate>
+        <div class="sb-note" id="sb-source"></div>
+        <div class="sb-note warn" id="sb-host" hidden></div>
+        <div class="sb-note error" id="sb-summary" role="alert" hidden></div>
+        <div id="sb-fields" style="display:grid;gap:14px"></div>
+      </form>
+      <div class="sb-foot">
+        <div class="test" id="sb-test">
+          <label class="sr-only" for="sb-test-to">Send a test email to</label>
+          <input id="sb-test-to" type="email" placeholder="Send a test email to…" autocomplete="email">
+          <button class="btn small" type="button" id="sb-test-send" title="Uses the saved settings">Send test</button>
+        </div>
+        <p class="result" id="sb-test-result" role="status" hidden></p>
+        <div class="row">
+          <span class="status" id="sb-status" role="status" aria-live="polite"></span>
+          <button class="btn quiet" type="button" id="sb-cancel">Close</button>
+          <button class="btn primary" type="submit" form="sb-form" id="sb-save">Save settings</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
   <script src="/vendor/marked.js"></script>
   <script src="/vendor/purify.js"></script>
   <script>
@@ -324,6 +406,7 @@
     const $ = (id) => document.getElementById(id);
     let meta = {};            // type -> { label, settings: [{kind,key,label,help,...}] }
     let starterMeta = { label: "Starter Node", settings: [] };
+    let appFeatures = { emailEnabled: true, emailReady: true };
     let doc = null;           // the flow being edited
     let problems = [];
     let selectedId = null;
@@ -492,6 +575,8 @@
       tiles.replaceChildren();
       for (const type of TOOL_ORDER) {
         if (!meta[type]) continue;
+        // Email off in Settings: the Verification Email node is not offered.
+        if (type === "email-code" && !appFeatures.emailEnabled) continue;
         const tile = el("button", {
           class: "tile", type: "button", draggable: "true",
           "aria-label": `Add ${meta[type].label} to the end of the flow`,
@@ -923,6 +1008,235 @@
     });
     window.addEventListener("beforeunload", (e) => { if (saveTimer) { save().catch(() => {}); e.preventDefault(); } });
 
+    /* ---------- app info and settings ---------- */
+
+    async function refreshMeta() {
+      const m = await api("GET", "/api/builder/meta");
+      for (const t of m.types) meta[t.type] = t;
+      starterMeta = m.starter;
+      appFeatures = m.features;
+      $("app-name").textContent = m.app.name ? `· ${m.app.name}` : "";
+      document.title = `${m.app.name} · Whiteboard`;
+      $("testing-badge").hidden = !m.app.testing;
+      const badge = $("settings-badge");
+      badge.hidden = !m.settings.errors;
+      badge.textContent = m.settings.errors ? `${m.settings.errors} setting${m.settings.errors === 1 ? "" : "s"} need fixing` : "";
+      renderTiles();
+      return m;
+    }
+
+    /** After settings change: refresh toolbox, badges, and the current flow's problems. */
+    async function afterSettingsChange() {
+      await refreshMeta();
+      if (doc) {
+        const data = await api("GET", `/api/builder/flows/${doc.id}`);
+        problems = data.problems;
+        renderProblems();
+        decorateNodes();
+      }
+    }
+
+    const sb = { dialog: $("settings-bar"), data: null, clear: new Set() };
+
+    async function openSettings() {
+      $("sb-status").textContent = "";
+      $("sb-test-result").hidden = true;
+      sb.clear.clear();
+      try { sb.data = await api("GET", "/api/settings"); }
+      catch (err) { alert(err.message); return; }
+      renderSettings();
+      sb.dialog.showModal();
+      sb.dialog.querySelector("#sb-fields input:not([disabled]), #sb-fields select:not([disabled])")?.focus();
+    }
+
+    function renderSettings(problemsOverride) {
+      const d = sb.data;
+      const probs = problemsOverride || d.problems;
+      const src = $("sb-source");
+      src.replaceChildren();
+      if (d.editable) {
+        src.append("Saved to ", el("code", {}, "data/app-config.json"), ". Environment variables are ignored because ",
+          el("code", {}, "app_config"), " is on.");
+      } else {
+        src.append("These come from environment variables (or a ", el("code", {}, ".env"), " file) and are read-only here. Set ",
+          el("code", {}, "app_config=true"), " and restart to manage them in this Settings Bar instead.");
+      }
+      $("sb-host").hidden = !d.hostWarning;
+      $("sb-host").textContent = d.hostWarning || "";
+
+      const container = $("sb-fields");
+      container.replaceChildren();
+      const groups = new Map();
+      for (const f of d.fields) {
+        if (!groups.has(f.group)) {
+          const fs = el("fieldset", { "data-group": f.group }, el("legend", {}, f.group));
+          groups.set(f.group, fs);
+          container.append(fs);
+        }
+        groups.get(f.group).append(settingField(f, probs.filter((p) => p.key === f.key), !d.editable));
+      }
+      const unattached = probs.filter((p) => p.level === "error" && !d.fields.some((f) => f.key === p.key));
+      const errorCount = probs.filter((p) => p.level === "error").length;
+      const summary = $("sb-summary");
+      summary.hidden = errorCount === 0;
+      summary.textContent = errorCount ? `${errorCount} setting${errorCount === 1 ? "" : "s"} need fixing.${unattached.length ? " " + unattached.map((p) => p.message).join(" ") : ""}` : "";
+      $("sb-save").hidden = !d.editable;
+      updateVisibility();
+    }
+
+    function settingField(f, own, readOnly) {
+      const id = `sb-${f.key}`;
+      const helpId = `${id}-help`;
+      const errs = own.filter((p) => p.level === "error");
+      const warns = own.filter((p) => p.level === "warning");
+      const wrap = el("div", { class: "fld" + (errs.length ? " has-error" : ""), "data-key": f.key });
+      const envName = el("code", { class: "env", title: "Environment variable name" }, f.key);
+      const described = [helpId, errs.length ? `${id}-err` : null].filter(Boolean).join(" ");
+      let control;
+
+      if (f.kind === "bool") {
+        const current = f.value !== "" ? f.value : (f.default ?? "false");
+        control = el("input", { type: "checkbox", id, disabled: readOnly, "aria-describedby": described });
+        control.checked = ["true", "1", "yes", "on"].includes(String(current).trim().toLowerCase());
+        control.addEventListener("change", updateVisibility);
+        wrap.append(el("div", { class: "fld-top" }, el("span", { class: "toggle" }, control, el("label", { for: id }, f.label)), envName));
+      } else {
+        const label = el("label", { for: id }, f.label, f.required ? el("span", { class: "req", "aria-hidden": "true" }, "*") : null);
+        if (f.kind === "enum") {
+          control = el("select", { id, disabled: readOnly, "aria-describedby": described, "aria-required": f.required ? "true" : undefined });
+          if (!f.default) control.append(el("option", { value: "" }, "Choose…"));
+          for (const o of f.options) control.append(el("option", { value: o }, o));
+          control.value = (f.value || f.default || "").toLowerCase();
+          control.addEventListener("change", updateVisibility);
+        } else if (f.kind === "email-list") {
+          control = el("textarea", { id, disabled: readOnly, "aria-describedby": described, placeholder: "tester@example.com\n@yourcompany.com", spellcheck: "false" });
+          control.value = f.value.split(/[\s,;]+/).filter(Boolean).join("\n");
+        } else if (f.kind === "password") {
+          control = el("input", {
+            type: "password", id, disabled: readOnly, autocomplete: "new-password", "aria-describedby": described,
+            placeholder: f.isSet ? "Saved. Type to replace it." : (readOnly ? "Not set" : ""),
+          });
+        } else {
+          control = el("input", {
+            type: f.kind === "int" ? "number" : "text", id, disabled: readOnly, "aria-describedby": described,
+            min: f.min, max: f.max, spellcheck: "false", autocapitalize: "off",
+            inputmode: f.kind === "int" ? "numeric" : f.kind === "url" ? "url" : f.kind === "email" ? "email" : undefined,
+            placeholder: f.default ?? (f.key === "app_url" ? location.origin : ""),
+          });
+          control.value = f.value;
+        }
+        wrap.append(el("div", { class: "fld-top" }, label, envName));
+        if (f.kind === "password" && f.isSet && !readOnly) {
+          const removeBtn = el("button", { class: "btn quiet small", type: "button" }, "Remove");
+          removeBtn.addEventListener("click", () => {
+            const removing = !sb.clear.has(f.key);
+            removing ? sb.clear.add(f.key) : sb.clear.delete(f.key);
+            removeBtn.textContent = removing ? "Keep" : "Remove";
+            control.placeholder = removing ? "Will be removed when you save" : "Saved. Type to replace it.";
+            control.value = "";
+          });
+          wrap.append(el("div", { class: "secret" }, control, removeBtn));
+        } else {
+          wrap.append(control);
+        }
+      }
+      control.dataset.key = f.key;
+      control.dataset.kind = f.kind;
+      wrap.append(el("p", { class: "help", id: helpId }, f.help));
+      for (const e of errs) wrap.append(el("p", { class: "err", id: `${id}-err` }, e.message));
+      for (const w of warns) wrap.append(el("p", { class: "wrn" }, w.message));
+      return wrap;
+    }
+
+    function formValue(key) {
+      const c = document.getElementById(`sb-${key}`);
+      if (!c) return undefined;
+      return c.type === "checkbox" ? c.checked : c.value.trim().toLowerCase();
+    }
+
+    // Shows a field only when its conditions hold, mirroring the server rules.
+    function updateVisibility() {
+      for (const f of sb.data.fields) {
+        const visible = f.when.every((cond) => cond.in.includes(formValue(cond.key)));
+        const wrap = document.querySelector(`.fld[data-key="${f.key}"]`);
+        if (wrap) wrap.hidden = !visible;
+      }
+      for (const fs of document.querySelectorAll("#sb-fields fieldset")) {
+        fs.hidden = ![...fs.querySelectorAll(".fld")].some((w) => !w.hidden);
+      }
+      const emailOn = formValue("enable_email") === true;
+      $("sb-test").hidden = !emailOn;
+    }
+
+    $("sb-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!sb.data.editable) return;
+      const values = {};
+      for (const f of sb.data.fields) {
+        const c = document.getElementById(`sb-${f.key}`);
+        if (!c) continue;
+        if (f.kind === "bool") values[f.key] = c.checked ? "true" : "false";
+        else if (f.kind === "password") {
+          if (sb.clear.has(f.key)) values[f.key] = null;
+          else if (c.value) values[f.key] = c.value;
+        } else values[f.key] = c.value.trim();
+      }
+      const save = $("sb-save");
+      save.disabled = true;
+      $("sb-status").textContent = "Saving…";
+      $("sb-status").classList.remove("bad");
+      try {
+        sb.data = await api("PUT", "/api/settings", { values });
+        sb.clear.clear();
+        renderSettings();
+        $("sb-status").textContent = "Saved";
+        await afterSettingsChange();
+      } catch (err) {
+        $("sb-status").textContent = err.message;
+        $("sb-status").classList.add("bad");
+        if (err.problems) {
+          // Keep what the user typed: only redraw error messages, not the inputs.
+          for (const wrap of document.querySelectorAll("#sb-fields .fld")) {
+            wrap.classList.remove("has-error");
+            wrap.querySelectorAll(".err, .wrn").forEach((n) => n.remove());
+          }
+          for (const p of err.problems) {
+            const wrap = document.querySelector(`.fld[data-key="${p.key}"]`);
+            if (!wrap) continue;
+            if (p.level === "error") wrap.classList.add("has-error");
+            wrap.append(el("p", { class: p.level === "error" ? "err" : "wrn" }, p.message));
+          }
+          const first = document.querySelector("#sb-fields .fld.has-error:not([hidden]) input, #sb-fields .fld.has-error:not([hidden]) select, #sb-fields .fld.has-error:not([hidden]) textarea");
+          first?.focus();
+          const count = err.problems.filter((p) => p.level === "error").length;
+          $("sb-summary").hidden = false;
+          $("sb-summary").textContent = `${count} setting${count === 1 ? "" : "s"} need fixing. Nothing was saved.`;
+        }
+      } finally {
+        save.disabled = false;
+      }
+    });
+
+    $("sb-test-send").addEventListener("click", async () => {
+      const out = $("sb-test-result");
+      out.hidden = false;
+      out.className = "result";
+      out.textContent = "Sending…";
+      try {
+        const r = await api("POST", "/api/settings/test-email", { to: $("sb-test-to").value });
+        out.className = "result ok";
+        out.textContent = `Sent via ${r.via}. Check the inbox (and spam folder).`;
+      } catch (err) {
+        out.className = "result bad";
+        out.textContent = err.message;
+      }
+    });
+
+    $("open-settings").addEventListener("click", openSettings);
+    $("settings-badge").addEventListener("click", openSettings);
+    $("sb-close").addEventListener("click", () => sb.dialog.close());
+    $("sb-cancel").addEventListener("click", () => sb.dialog.close());
+
     /* ---------- publishing ---------- */
 
     let site = null;
@@ -1059,10 +1373,7 @@
 
     (async () => {
       try {
-        const m = await api("GET", "/api/builder/meta");
-        for (const t of m.types) meta[t.type] = t;
-        starterMeta = m.starter;
-        renderTiles();
+        await refreshMeta();
         const flows = await refreshPicker();
         const wanted = new URLSearchParams(location.search).get("flow");
         const id = flows.find((f) => f.id === wanted)?.id ?? flows[0]?.id;

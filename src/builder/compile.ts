@@ -26,7 +26,11 @@ export interface BuilderDeps {
   /** Hash of a throwaway password, checked for unknown emails so timing does not reveal them. */
   dummyPasswordHash: string;
   /** Delivers a one-time code. `to` may be an email with no account yet, when the flow allows sign-up. */
-  sendCode: (to: { email: string }, code: string) => Promise<void>;
+  sendCode: (to: { email: string }, code: string, info: { ttlMinutes: number }) => Promise<void>;
+  /** Testing mode: return false to turn an email away at the Starter node. Read on every sign-in. */
+  isAllowed?: (email: string) => boolean;
+  /** Whether email is switched on in Settings. Read when compiling. */
+  emailEnabled?: () => boolean;
   webauthn: { rpID: string; rpName: string; origin: string };
   now?: () => number;
 }
@@ -93,7 +97,7 @@ export function ageOn(dob: string, now: Date): number | undefined {
  * Fails (ok: false) when checkDoc reports any error.
  */
 export function compileDoc(doc: BuilderDoc, deps: BuilderDeps, flowId = `builder:${doc.id}`): CompileResult {
-  const problems = checkDoc(doc);
+  const problems = checkDoc(doc, { emailEnabled: deps.emailEnabled?.() ?? true });
   if (problems.some((p) => p.level === "error")) return { ok: false, problems };
 
   const now = deps.now ?? Date.now;
@@ -112,11 +116,19 @@ export function compileDoc(doc: BuilderDoc, deps: BuilderDeps, flowId = `builder
     description: String(starter.help),
     fields: [{ name: "email", label: "Email", type: "email", required: true, autocomplete: "username webauthn", maxLength: 254 }],
     handle: async ({ email }) => {
+      if (deps.isAllowed && !deps.isAllowed(email!)) return { outcome: "blocked" };
       const user = await deps.users.findByEmail(email!);
       return { outcome: "next", context: { email: email!.toLowerCase(), userId: user?.id ?? null, factors: [] } };
     },
   });
-  transitions.start = { next: entryOf(0) };
+  transitions.start = { next: entryOf(0), blocked: "start:blocked" };
+  nodes.push({
+    id: "start:blocked",
+    kind: "terminal",
+    status: "failure",
+    title: "Invite only",
+    message: "This app is in testing. Only invited testers can sign in right now.",
+  });
 
   doc.steps.forEach((step, i) => {
     const next = i + 1 < doc.steps.length ? entryOf(i + 1) : undefined;
@@ -234,13 +246,23 @@ export function compileDoc(doc: BuilderDoc, deps: BuilderDeps, flowId = `builder
               // With sign-up on, new emails get a real code so they can prove they own the address.
               // Otherwise unknown emails get the same screen, with a code nobody received.
               const deliver = !!user || signupLater;
-              if (deliver) await deps.sendCode({ email: String(ctx.email) }, code);
+              let sent = deliver;
+              if (deliver) {
+                try {
+                  await deps.sendCode({ email: String(ctx.email) }, code, { ttlMinutes: ttlMs / 60_000 });
+                } catch (err) {
+                  // Keep the user on the code screen with a clear message. The reason goes to the server log only.
+                  console.error(`[email] code for ${String(ctx.email)} not sent: ${err instanceof Error ? err.message : String(err)}`);
+                  sent = false;
+                }
+              }
+              const failedNotice = "We couldn't send the email right now. Try \"Send me a new code\" in a moment.";
               const next: CodeState = {
-                codeHash: deliver ? sha256(code) : sha256(randomBytes(16).toString("hex")),
+                codeHash: sent ? sha256(code) : sha256(randomBytes(16).toString("hex")),
                 expiresAt: now() + ttlMs,
                 attempts: 0,
                 sends: sends + 1,
-                ...(sends > 0 && { notice: "A new code has been sent." }),
+                ...(deliver && !sent ? { notice: failedNotice } : sends > 0 ? { notice: "A new code has been sent." } : {}),
               };
               return { outcome: "sent", context: { [stateKey(step)]: next } };
             },

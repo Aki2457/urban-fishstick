@@ -18,7 +18,7 @@ Outcomes map to the next node through a transition table. A screen can return
 
 ```bash
 npm install
-npm test        # 41 tests
+npm test        # 65 tests
 npm run demo    # whiteboard at http://localhost:3000, hand-written login at /login
 ```
 
@@ -27,7 +27,7 @@ Demo accounts (seeded on first run only, see "Before production"):
 - `ada@example.com` / `correct horse`
 - `grace@example.com` / `battery staple` (MFA in the `/login` flow)
 
-Email codes are printed to the server console.
+Email is off until you configure it (see Settings below). For local testing, `enable_email=true email_type=console email_from=dev@localhost.test npm run demo` prints codes to the server log.
 
 Everything the demo saves lives in `data/` (override with `DATA_DIR`):
 
@@ -36,6 +36,7 @@ Everything the demo saves lives in `data/` (override with `DATA_DIR`):
 | `flows.json` | Whiteboard flows |
 | `users.json` | Accounts and passkeys (owner-only permissions) |
 | `session-secret` | Key that signs site session cookies (owner-only permissions) |
+| `app-config.json` | Settings saved from the Settings Bar, when `app_config=true` (owner-only permissions) |
 | `sites/` | Published sites: `sites.json` plus each site's generated HTML |
 
 ## The whiteboard
@@ -72,9 +73,48 @@ The whiteboard checks the flow as you edit. Errors block **Run flow** and **Publ
 
 The seeded flow **Sign in with a passkey** (Age Check, Passkey, Authenticate) only works for users who already have a passkey, so run **Password, then add a passkey** once first.
 
-Passkeys need `localhost` or HTTPS. For another host, set `ORIGIN` (e.g. `https://auth.example.com`) and optionally `RP_ID`.
+Passkeys need `localhost` or HTTPS. On another host, set `app_url` (e.g. `https://auth.example.com`).
 
 Each saved version of a flow compiles to its own engine flow, so editing a flow never breaks a run that is already in progress.
+
+## Settings
+
+Settings are environment variables, or a `.env` file in the working directory (see `.env.example`). Names are not case sensitive (`app_name` = `APP_NAME`), and the real environment wins over `.env`.
+
+**Where settings come from**
+
+- `app_config=false` (default): settings come from the environment and are checked at startup. Any error stops the server with a list of what to fix. The whiteboard's **Settings** button shows them read-only.
+- `app_config=true`: every setting below is ignored in the environment. The **Settings** button opens the Settings Bar, where you edit them. They are saved to `data/app-config.json`. Saving checks everything and refuses the whole change if anything is wrong, so a half-valid setup is never stored. Changes apply immediately, with no restart. Secrets are never sent back to the browser: the field shows "Saved", typing replaces the value, and **Remove** deletes it.
+
+`PORT`, `HOST` and `DATA_DIR` are always read from the environment, because the server needs them before it can find the settings file.
+
+**The settings**
+
+| Name | Type | Used when | What it does |
+|------|------|-----------|--------------|
+| `app_config` | bool | always | Manage settings in the Settings Bar instead of the environment. |
+| `app_name` | string | always | Shown in emails, passkey prompts and the builder. Default `Auth Flow`. |
+| `app_url` | URL | always | Public address, e.g. `https://auth.example.com`. Passkeys, cookies and site links use it. Default `http://localhost:PORT`. |
+| `app_seed_demo_users` | bool | first start | Create the two demo accounts. Default `true`. Turn it off in production. |
+| `enable_app_testing` | bool | always | Testing mode: only testers can sign in or sign up. Others see "Invite only", and their existing sessions stop working. |
+| `app_testing_allowlist` | emails | testing mode | Comma or newline separated. `@example.com` allows a whole domain. Required in testing mode. |
+| `enable_email` | bool | always | When off, the Verification Email node is hidden, flows that use it can't run, and no email setting is needed. Default `false`. |
+| `email_type` | `smtp` · `api` · `api-smtp` · `smtp-api` · `console` | email on | How to send. `api-smtp` tries the API, then SMTP if it fails. `smtp-api` is the reverse. `console` writes to the server log and only works when `app_url` is localhost. |
+| `email_from` | email | email on | Sender address. Defaults to `email_smtp_username` when that is an email. |
+| `email_from_name` | string | email on | Sender name. Defaults to `app_name`. |
+| `email_smtp_server` | URL | SMTP used | E.g. `https://smtp.gmail.com`. The scheme is required (`https://`, `smtp://` or `smtps://`) and case doesn't matter. Only the host is used. The port goes in `email_smtp_port`. |
+| `email_smtp_useauth` | bool | SMTP used | Sign in to the SMTP server. Default `true`. |
+| `email_smtp_tlsorssl` | `tls` · `ssl` | SMTP used | `tls` = STARTTLS, required (usually port 587). `ssl` = TLS from the start (usually 465). Unencrypted SMTP is not allowed. |
+| `email_smtp_port` | 1–65535 | SMTP used | You get a warning if the port doesn't match `tls`/`ssl`. |
+| `email_smtp_username` | string | SMTP with auth | Usually an email. Other usernames get a warning, not an error, because some providers use them (SendGrid uses `apikey`). |
+| `email_smtp_password` | secret | SMTP with auth | For Gmail, use an app password. |
+| `email_api_provider` | `generic` · `resend` · `sendgrid` · `postmark` | API used | Request format. `generic` POSTs JSON `{from, to, subject, text, html}` with `Authorization: Bearer <key>`. Default `generic`. |
+| `email_api_url` | URL | API used | Required for `generic` (the full endpoint). Optional for the others, which default to their official URL. `https://` only (`http://` allowed for localhost). |
+| `email_api_key` | secret | API used | Sent as a Bearer token (Postmark: `X-Postmark-Server-Token`). |
+
+"SMTP used" means `email_type` is `smtp`, `api-smtp` or `smtp-api`. "API used" means it is `api`, `api-smtp` or `smtp-api`. Fallback types need both configured.
+
+When email is on, the Settings Bar has **Send test**, which sends a real email through the saved settings and reports which transport delivered it, or why each one failed. Failures are logged without passwords or keys. If a code email can't be sent during sign-in, the user stays on the code screen with a message and can request a new code.
 
 ## Publishing a site
 
@@ -88,7 +128,7 @@ The site goes live at `/s/<address>/`. Visitors who complete the flow get a sess
 How it works:
 
 - Publishing writes two static HTML pages. The public page is served to anyone. The members page is served only when the request carries a valid session cookie. Without one, the server redirects to the public page and the members HTML never leaves the server.
-- The session cookie is HMAC-signed, `HttpOnly`, `SameSite=Lax`, scoped to that site's path, `Secure` when `ORIGIN` is HTTPS, and lasts as long as the Authenticate node's session setting.
+- The session cookie is HMAC-signed, `HttpOnly`, `SameSite=Lax`, scoped to that site's path, `Secure` when `app_url` is HTTPS, and lasts as long as the Authenticate node's session setting.
 - A site uses a copy of the flow taken at publish time. Editing the whiteboard does not change the live site until you press **Update site**. The dialog tells you when the live copy is out of date.
 - Sign-in sessions are tied to their site. A sign-in started on one site or in **Run flow** cannot be completed on another site to get its cookie.
 - Markdown is rendered and sanitized on the server (no scripts, event handlers or `javascript:` links). Pages are sent with a Content-Security-Policy, `X-Frame-Options: DENY` and `nosniff`.
@@ -162,14 +202,14 @@ unknown nodes, dead ends, and unreachable nodes all fail immediately.
 ## Before production
 
 - The whiteboard API has no login. The server binds to `127.0.0.1` by default and refuses cross-origin writes, but anyone who can reach it can edit flows. Put it behind your admin auth, or run the builder separately from the published sites, before exposing it.
-- Start the public server with `SEED_DEMO_USERS=false` so the demo accounts with known passwords are never created, and with `ORIGIN=https://your-domain` so cookies are `Secure` and passkeys work.
+- Start the public server with `app_seed_demo_users=false` so the demo accounts with known passwords are never created, and with `app_url=https://your-domain` so cookies are `Secure` and passkeys work.
+- With `app_config=true`, SMTP passwords and API keys sit in `data/app-config.json` in plain text (owner-only file permissions). Anyone who can read the server's disk can read them. If that matters, keep `app_config=false` and pass secrets as environment variables from your host's secret store.
 - Age Check uses the date of birth the user types. It stops honest under-age users, not people who lie. Real age estimation (face scan or ID check) needs a third-party provider.
 - Signing out clears the cookie, but a copied cookie stays valid until it expires. Keep the session length short, or move to server-side sessions if you need instant revocation.
 - Accounts are stored in a JSON file. That is fine for one server and a modest number of users. Use a database beyond that.
 
 - `MemorySessionStore` keeps in-progress sign-ins in memory, so a restart abandons them (finished sessions are cookies and survive). Implement `SessionStore` against Redis to run more than one server.
 - The rate limit is per IP and in memory. Add per-email limits, and a shared limiter if you run several servers.
-- Wire `sendCode` to your email or SMS provider.
 - Add CSRF protection if the API shares a cookie domain with other apps.
 
 ## Layout
@@ -179,6 +219,8 @@ src/engine/     engine, types, validation, session store
 src/flows/      login flow and the in-memory user directory
 src/builder/    whiteboard document format, node settings, rules, compiler, file store
 src/sites/      publishing: site store, page templates, Markdown, session cookies, rate limit
+src/config/     settings: schema and validation, environment vs Settings Bar
+src/email/      mailer: SMTP (nodemailer), email APIs, fallback order
 src/demo/       HTTP server, whiteboard page, run page, shared sign-in form (flow-client.js)
 test/           node:test suites for the engine and the login flow
 ```

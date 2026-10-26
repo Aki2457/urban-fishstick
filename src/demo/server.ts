@@ -1,4 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { existsSync, readFileSync } from "node:fs";
+import { parseEnv } from "node:util";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -29,6 +31,8 @@ import {
   verifyPassword,
 } from "../index.js";
 import type { BuilderDoc, FlowStep, SiteRecord } from "../index.js";
+import { ConfigError, ConfigService, mergeEnv, readEnv } from "../config/service.js";
+import { codeEmail, EmailError, Mailer, testEmail } from "../email/mailer.js";
 
 /*
  * Demo server. Run `npm run demo`, then open:
@@ -37,22 +41,63 @@ import type { BuilderDoc, FlowStep, SiteRecord } from "../index.js";
  *   http://localhost:3000/login     the hand-written login flow
  *   http://localhost:3000/s/<slug>/ a published site
  *
- * Email codes are printed to this console.
+ * Settings: see .env.example. PORT, HOST and DATA_DIR are always read from the environment,
+ * because they are needed before the settings file can be found. Everything else comes from
+ * environment variables, or from the Settings Bar when app_config=true.
  */
 
-const PORT = Number(process.env.PORT ?? 3000);
+// A .env file in the working directory is read first. Variables set in the real environment win over it.
+// Names are not case sensitive: app_name and APP_NAME are the same setting.
+const env = mergeEnv(existsSync(".env") ? parseEnv(readFileSync(".env", "utf8")) : {}, process.env);
+
+const PORT = Number(readEnv(env, "PORT") ?? 3000);
 // Local only by default: the builder API has no login of its own.
-const HOST = process.env.HOST ?? "127.0.0.1";
-const ORIGIN = (process.env.ORIGIN ?? `http://localhost:${PORT}`).replace(/\/$/, "");
-const RP_ID = process.env.RP_ID ?? new URL(ORIGIN).hostname;
-const SECURE_COOKIES = ORIGIN.startsWith("https://");
+const HOST = readEnv(env, "HOST") ?? "127.0.0.1";
 const MAX_JSON = 16 * 1024;
 const MAX_BUILDER_JSON = 4 * 1024 * 1024;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const publicDir = join(root, "src", "demo", "public");
-const dataDir = process.env.DATA_DIR ?? join(root, "data");
+const dataDir = readEnv(env, "DATA_DIR") ?? join(root, "data");
 const modules = join(root, "node_modules");
+
+/* ---------- settings ---------- */
+
+const settings = await (async () => {
+  try {
+    const service = new ConfigService({ env, file: join(dataDir, "app-config.json"), defaultAppUrl: `http://localhost:${PORT}` });
+    await service.load();
+    return service;
+  } catch (err) {
+    if (err instanceof ConfigError) {
+      console.error(`Settings error: ${err.message}`);
+      process.exit(1);
+    }
+    throw err;
+  }
+})();
+
+// Environment variables are checked once at startup: stop with a clear list rather than run half-configured.
+// With app_config=true the server starts anyway, so the Settings Bar can be used to fix things.
+if (!settings.editable && settings.errors.length > 0) {
+  console.error("Settings errors (from environment variables):");
+  for (const p of settings.errors) console.error(`  ${p.key}: ${p.message}`);
+  console.error("Fix them, or set app_config=true to manage settings in the Settings Bar.");
+  process.exit(1);
+}
+for (const p of settings.problems.filter((x) => x.level === "warning")) console.warn(`Settings warning: ${p.key}: ${p.message}`);
+
+const appUrl = () => settings.config.app_url;
+const secureCookies = () => appUrl().startsWith("https://");
+const features = () => ({ emailEnabled: settings.config.enable_email, emailReady: settings.emailReady });
+
+const mailer = new Mailer({
+  settings: () => ({
+    config: settings.config,
+    ready: settings.emailReady,
+    problems: settings.errors.filter((p) => p.key?.startsWith("email")).map((p) => p.message),
+  }),
+});
 
 const STATIC: Record<string, { file: string; type: string }> = {
   "/assets/flow-client.js": { file: join(publicDir, "flow-client.js"), type: "text/javascript; charset=utf-8" },
@@ -66,27 +111,37 @@ const STATIC: Record<string, { file: string; type: string }> = {
 
 const users = new FileUserDirectory(join(dataDir, "users.json"));
 await users.load();
-if (users.all().length === 0 && process.env.SEED_DEMO_USERS !== "false") {
-  // Known passwords: fine on localhost, never on a public server. Set SEED_DEMO_USERS=false there.
+if (users.all().length === 0 && settings.config.app_seed_demo_users) {
+  // Known passwords: fine on localhost, never on a public server. Set app_seed_demo_users=false there.
   users.add({ id: "u1", email: "ada@example.com", passwordHash: await hashPassword("correct horse"), mfaEnabled: false });
   users.add({ id: "u2", email: "grace@example.com", passwordHash: await hashPassword("battery staple"), mfaEnabled: true });
   await users.save();
 }
 
-const sendCode = async (to: { email: string }, code: string) => console.log(`[demo mail] code for ${to.email}: ${code}`);
 const dummyPasswordHash = await hashPassword("not-a-real-password");
+const isAllowed = (email: string) => settings.isAllowed(email);
 
-const engine = new FlowEngine().register(createLoginFlow({ users, verifyPassword, dummyPasswordHash, sendCode }));
+// The hand-written /login demo keeps printing its MFA codes to the console. Whiteboard flows use real email.
+const demoSendCode = async (to: { email: string }, code: string) => console.log(`[demo /login] code for ${to.email}: ${code}`);
+const engine = new FlowEngine().register(createLoginFlow({ users, verifyPassword, dummyPasswordHash, sendCode: demoSendCode, isAllowed }));
+
 const builderDeps = {
   users,
   verifyPassword,
   hashPassword,
   dummyPasswordHash,
-  sendCode,
-  webauthn: { rpID: RP_ID, rpName: "Auth Flow", origin: ORIGIN },
+  isAllowed,
+  emailEnabled: () => settings.config.enable_email,
+  sendCode: async (to: { email: string }, code: string, info: { ttlMinutes: number }) => {
+    await mailer.send(codeEmail(settings.config.app_name, to.email, code, info.ttlMinutes));
+  },
+  // A getter, so passkeys always use the current App URL and name.
+  get webauthn() {
+    return { rpID: new URL(appUrl()).hostname, rpName: settings.config.app_name, origin: appUrl() };
+  },
 };
 
-const docs = new FlowDocStore(process.env.FLOWS_FILE ?? join(dataDir, "flows.json"));
+const docs = new FlowDocStore(join(dataDir, "flows.json"));
 await docs.load();
 if (docs.list().length === 0) await seed();
 
@@ -113,8 +168,13 @@ async function seed(): Promise<void> {
   });
 }
 
-/** Compiles a flow document into the engine once per version. */
+/**
+ * Compiles a flow document into the engine once per version.
+ * The check runs every time, because Settings (e.g. email off) can make a compiled flow unusable.
+ */
 function ensureFlow(doc: BuilderDoc, flowId: string): { ok: true } | { ok: false; problems: ReturnType<typeof checkDoc> } {
+  const problems = checkDoc(doc, features());
+  if (problems.some((p) => p.level === "error")) return { ok: false, problems };
   if (engine.has(flowId)) return { ok: true };
   const compiled = compileDoc(doc, builderDeps, flowId);
   if (!compiled.ok) return { ok: false, problems: compiled.problems };
@@ -179,10 +239,21 @@ async function readJson(req: IncomingMessage, limit = MAX_JSON): Promise<Record<
   return parsed as Record<string, unknown>;
 }
 
-/** Rejects cross-site writes. Browsers always send Origin on cross-site POSTs, and the JSON content type forces a preflight. */
+/**
+ * Rejects cross-site writes. Browsers always send Origin on cross-site POSTs, and the JSON content type forces a preflight.
+ * Compared with the Host header rather than app_url, so changing app_url in Settings can't lock you out.
+ */
 function assertSameOrigin(req: IncomingMessage): void {
   const origin = req.headers.origin;
-  if (origin && origin !== ORIGIN) throw new HttpError(403, "Cross-origin request refused.");
+  if (origin) {
+    let host = "";
+    try {
+      host = new URL(origin).host;
+    } catch {
+      /* malformed Origin: refused below */
+    }
+    if (!host || host !== req.headers.host) throw new HttpError(403, "Cross-origin request refused.");
+  }
   if (!String(req.headers["content-type"] ?? "").startsWith("application/json")) throw new HttpError(415, "Expected application/json.");
 }
 
@@ -199,7 +270,7 @@ function inputOf(body: Record<string, unknown>): Record<string, unknown> {
 }
 
 function docResponse(doc: BuilderDoc) {
-  return { doc, problems: checkDoc(doc) };
+  return { doc, problems: checkDoc(doc, features()) };
 }
 
 function siteResponse(site: SiteRecord | undefined, doc: BuilderDoc) {
@@ -211,7 +282,7 @@ function siteResponse(site: SiteRecord | undefined, doc: BuilderDoc) {
       publicMd: site.publicMd,
       membersMd: site.membersMd,
       publishedAt: site.publishedAt,
-      url: `${ORIGIN}/s/${site.slug}/`,
+      url: `${appUrl()}/s/${site.slug}/`,
       outdated: doc.updatedAt > site.flow.updatedAt,
     },
   };
@@ -261,7 +332,9 @@ async function handleSite(req: IncomingMessage, res: ServerResponse, slug: strin
   const site = sites.get(slug);
   if (!site) throw new HttpError(404, "This site does not exist or was unpublished.");
   const session = signer.verify(parseCookies(req.headers.cookie)[cookieName], slug);
-  const user = session ? await users.findById(session.u) : undefined;
+  const found = session ? await users.findById(session.u) : undefined;
+  // Testing mode also applies to people who signed in before it was switched on.
+  const user = found && isAllowed(found.email) ? found : undefined;
 
   if (req.method === "GET" && rest === "/") return sendFile(res, sites.pagePath(slug, "index"), "text/html; charset=utf-8", "no-store");
   if (req.method === "GET" && rest === "/members") {
@@ -279,7 +352,10 @@ async function handleSite(req: IncomingMessage, res: ServerResponse, slug: strin
   if (rest === "/api/start") {
     limit(req, `site:${slug}`);
     const ready = ensureFlow(site.flow, flowId);
-    if (!ready.ok) throw new HttpError(500, "This site's sign-in is misconfigured.");
+    if (!ready.ok) {
+      console.error(`[site ${slug}] sign-in unavailable: ${ready.problems.filter((p) => p.level === "error").map((p) => p.message).join(" ")}`);
+      throw new HttpError(503, "Sign-in is unavailable right now. Please try again later.");
+    }
     return send(res, 200, (await engine.start(flowId)).view);
   }
 
@@ -300,7 +376,7 @@ async function handleSite(req: IncomingMessage, res: ServerResponse, slug: strin
         `Max-Age=${Math.round(hours * 3600)}`,
         "HttpOnly",
         "SameSite=Lax",
-        ...(SECURE_COOKIES ? ["Secure"] : []),
+        ...(secureCookies() ? ["Secure"] : []),
       ].join("; ");
       return send(res, 200, { ...step.view, redirect: `/s/${slug}/members` }, { "set-cookie": cookie });
     }
@@ -308,7 +384,7 @@ async function handleSite(req: IncomingMessage, res: ServerResponse, slug: strin
   }
 
   if (rest === "/api/logout") {
-    const clear = `${cookieName}=; Path=/s/${slug}/; Max-Age=0; HttpOnly; SameSite=Lax${SECURE_COOKIES ? "; Secure" : ""}`;
+    const clear = `${cookieName}=; Path=/s/${slug}/; Max-Age=0; HttpOnly; SameSite=Lax${secureCookies() ? "; Secure" : ""}`;
     return send(res, 200, { ok: true }, { "set-cookie": clear });
   }
 
@@ -341,6 +417,9 @@ const server = createServer(async (req, res) => {
     /* builder */
     if (path === "/api/builder/meta" && req.method === "GET") {
       return send(res, 200, {
+        app: { name: settings.config.app_name, url: appUrl(), testing: settings.config.enable_app_testing },
+        features: features(),
+        settings: { source: settings.source, errors: settings.errors.length },
         starter: { label: "Starter Node", settings: STARTER_SETTINGS },
         types: STEP_TYPES.map((type) => ({ type, label: label(type), settings: STEP_SETTINGS[type] })),
       });
@@ -399,6 +478,38 @@ const server = createServer(async (req, res) => {
       }
     }
 
+    /* settings bar */
+    if (path === "/api/settings" && req.method === "GET") {
+      return send(res, 200, { ...settings.describe(), hostWarning: hostWarning(req) });
+    }
+    if (path === "/api/settings" && req.method === "PUT") {
+      if (!settings.editable) {
+        throw new HttpError(409, "Settings come from environment variables. Set app_config=true to edit them here.");
+      }
+      const body = await readJson(req, 64 * 1024);
+      const values = typeof body.values === "object" && body.values !== null && !Array.isArray(body.values) ? (body.values as Record<string, unknown>) : {};
+      try {
+        await settings.update(values);
+      } catch (err) {
+        if (err instanceof ConfigError) throw new HttpError(422, err.message, { problems: err.problems });
+        throw err;
+      }
+      return send(res, 200, { ...settings.describe(), hostWarning: hostWarning(req) });
+    }
+    if (path === "/api/settings/test-email" && req.method === "POST") {
+      limit(req, "test-email");
+      const body = await readJson(req);
+      const to = typeof body.to === "string" ? body.to.trim() : "";
+      if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(to)) throw new HttpError(400, "Enter the address to send the test email to.");
+      try {
+        const { via } = await mailer.send(testEmail(settings.config.app_name, to, String(settings.config.email_type)));
+        return send(res, 200, { ok: true, via });
+      } catch (err) {
+        if (err instanceof EmailError) throw new HttpError(502, err.message);
+        throw err;
+      }
+    }
+
     /* runtime for /run and /login */
     if (path === "/api/flows/login/start" && req.method === "POST") {
       limit(req, "login");
@@ -428,10 +539,24 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Whiteboard:  ${ORIGIN}/`);
-  console.log(`Login demo:  ${ORIGIN}/login`);
+  console.log(`${settings.config.app_name}`);
+  console.log(`  Whiteboard:  ${appUrl()}/`);
+  console.log(`  Login demo:  ${appUrl()}/login`);
+  console.log(`  Settings:    ${settings.editable ? "Settings Bar (app_config=true, environment variables ignored)" : "environment variables"}`);
+  if (settings.config.enable_app_testing) console.log(`  Testing mode: ${settings.config.app_testing_allowlist.length} tester entr${settings.config.app_testing_allowlist.length === 1 ? "y" : "ies"}`);
   if (users.all().some((u) => u.email.endsWith("@example.com"))) {
     console.log("Demo accounts: ada@example.com / correct horse, grace@example.com / battery staple");
   }
-  if (RP_ID !== "localhost" && !SECURE_COOKIES) console.warn("Passkeys and secure cookies need HTTPS unless you use localhost.");
+  if (!isLocalHost(appUrl()) && !secureCookies()) console.warn("Passkeys and secure cookies need HTTPS unless you use localhost.");
 });
+
+function isLocalHost(url: string): boolean {
+  return ["localhost", "127.0.0.1", "[::1]"].includes(new URL(url).hostname);
+}
+
+/** Warns when the builder is opened from a different address than app_url, since passkeys and links follow app_url. */
+function hostWarning(req: IncomingMessage): string | null {
+  const host = req.headers.host;
+  const configured = new URL(appUrl()).host;
+  return host && host !== configured ? `You opened the builder at ${host}, but App URL is ${appUrl()}. Passkeys and site links use the App URL.` : null;
+}
